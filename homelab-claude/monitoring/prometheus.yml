@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 30s
+
+scrape_configs:
+  - job_name: claude-code          # interactive + Remote Control + jobs: tokens, cost estimate, sessions
+    static_configs:
+      - targets: ["otel-collector:8889"]
+
+  - job_name: claude-runner        # automation flow: runs, failures, duration, tokens per job
+    static_configs:
+      - targets: ["claude-box:8787"]

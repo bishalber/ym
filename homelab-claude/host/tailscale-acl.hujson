@@ -1,0 +1,28 @@
+// Paste into https://login.tailscale.com/admin/acls (merge with what you have).
+// Only YOU can reach the homelab, and only on the ports this setup uses.
+// Replace you@example.com with your Tailscale login.
+{
+  "tagOwners": {
+    "tag:homelab": ["autogroup:admin"]
+  },
+
+  "grants": [
+    {
+      // your own devices -> homelab: web terminal, Grafana, n8n
+      "src": ["you@example.com"],
+      "dst": ["tag:homelab"],
+      "ip":  ["tcp:443", "tcp:8443", "tcp:10000"]
+    }
+  ],
+
+  "ssh": [
+    {
+      // "check" = re-confirm your identity in the browser every 12h before SSH is allowed
+      "action": "check",
+      "checkPeriod": "12h",
+      "src":    ["you@example.com"],
+      "dst":    ["tag:homelab"],
+      "users":  ["autogroup:nonroot", "root"]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# `cc` on the homelab host: jump straight into Claude's tmux session.
+#   ssh homelab           (Tailscale SSH)  then: cc
+#   ssh -t homelab cc     (one step, e.g. from Termius / Termux)
+# Detach with Ctrl-b d: Claude keeps running.
+exec docker exec -it -u claude -w /workspace claude-box tmux new-session -A -s main
