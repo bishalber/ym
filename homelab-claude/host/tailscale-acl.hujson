@@ -8,10 +8,10 @@
 
   "grants": [
     {
-      // your own devices -> homelab: web terminal, Grafana, n8n
+      // your own devices -> homelab: web terminal, Grafana, n8n, ntfy
       "src": ["you@example.com"],
       "dst": ["tag:homelab"],
-      "ip":  ["tcp:443", "tcp:8443", "tcp:10000"]
+      "ip":  ["tcp:443", "tcp:8443", "tcp:10000", "tcp:2586"]
     }
   ],
 

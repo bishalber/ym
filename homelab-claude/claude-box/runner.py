@@ -10,6 +10,7 @@ Rules that protect your Claude Pro limits:
   * one job at a time (a second call gets HTTP 409 instead of queueing up usage)
   * a daily cap on total runs (HTTP 429), so a looping workflow cannot drain the week
 Every run is appended to $JOB_LOG as one JSON line: the audit trail of your automation flow.
+If NTFY_URL is set, every finished job (and a hit daily cap) is also pushed to your phone via ntfy.
 """
 import datetime as dt
 import hmac
@@ -20,6 +21,7 @@ import signal
 import subprocess
 import threading
 import time
+import urllib.request
 from collections import defaultdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -31,11 +33,14 @@ MAX_PER_DAY = int(os.environ.get("JOB_MAX_RUNS_PER_DAY", "40"))
 PORT = int(os.environ.get("RUNNER_PORT", "8787"))
 MAX_INPUT = 200_000  # bytes. Big inputs = big token bills; pre-filter in n8n instead.
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+NTFY_URL = os.environ.get("NTFY_URL", "").rstrip("/")      # e.g. http://ntfy/claude-jobs (topic in path)
+NTFY_TOKEN = os.environ.get("NTFY_TOKEN", "")
+NTFY_ON_OK = os.environ.get("NTFY_ON_OK", "1") == "1"     # 0 = only failures / timeouts / cap
 TOKEN_TYPES = ("input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens")
 
 job_lock = threading.Lock()
 state_lock = threading.Lock()
-state = {"running": None, "day": dt.date.today(), "runs_today": 0}
+state = {"running": None, "day": dt.date.today(), "runs_today": 0, "cap_notified": False}
 m_runs = defaultdict(int)       # (job, status) -> count
 m_seconds = defaultdict(float)  # job -> total seconds
 m_tokens = defaultdict(int)     # (job, type) -> tokens
@@ -57,6 +62,40 @@ def parse_result(stdout: str) -> dict:
         if isinstance(obj, dict) and (obj.get("type") == "result" or "usage" in obj):
             return obj
     return {}
+
+
+def _ntfy_send(title: str, body: str, priority: str, tags: str) -> None:
+    req = urllib.request.Request(NTFY_URL, data=body.encode("utf-8"), method="POST")
+    # ntfy reads non-ASCII header values only when RFC 2047-encoded; keep titles ASCII.
+    req.add_header("Title", title.encode("ascii", "replace").decode())
+    req.add_header("Priority", priority)
+    req.add_header("Tags", tags)
+    if NTFY_TOKEN:
+        req.add_header("Authorization", f"Bearer {NTFY_TOKEN}")
+    try:
+        urllib.request.urlopen(req, timeout=10).close()
+    except Exception as exc:  # a notification problem must never fail or slow a job
+        print(f"[runner] ntfy failed: {exc}", flush=True)
+
+
+def notify(title: str, body: str, priority: str = "default", tags: str = "robot") -> None:
+    if NTFY_URL:
+        threading.Thread(target=_ntfy_send, args=(title, body, priority, tags), daemon=True).start()
+
+
+def notify_job(rec: dict) -> None:
+    ok = rec["status"] == "ok"
+    if ok and not NTFY_ON_OK:
+        return
+    tokens = sum(rec["usage"].values())
+    head = f"{rec['seconds']}s, {tokens:,} tokens"
+    if ok:
+        body = f"{head}\n\n{rec['result_preview'] or '(no output)'}"
+    else:
+        body = f"{head}\n\n{rec['stderr_tail'] or rec['result_preview'] or '(no output)'}"
+    notify(f"{rec['job']}: {rec['status']}", body[:3500],
+           priority="default" if ok else "high",
+           tags="white_check_mark" if ok else ("hourglass" if rec["status"] == "timeout" else "x"))
 
 
 def run_job(name: str, payload: str) -> dict:
@@ -106,6 +145,7 @@ def run_job(name: str, payload: str) -> dict:
     except OSError as exc:
         print(f"[runner] cannot write log: {exc}", flush=True)
 
+    notify_job(record)
     return {**record, "result": result_text}
 
 
@@ -180,8 +220,14 @@ class Handler(BaseHTTPRequestHandler):
 
         with state_lock:
             if state["day"] != dt.date.today():
-                state["day"], state["runs_today"] = dt.date.today(), 0
+                state["day"], state["runs_today"], state["cap_notified"] = dt.date.today(), 0, False
             if state["runs_today"] >= MAX_PER_DAY:
+                if not state["cap_notified"]:  # once per day, not once per refused call
+                    state["cap_notified"] = True
+                    notify("Daily job cap reached",
+                           f"{MAX_PER_DAY} runs today; further calls get HTTP 429 until midnight. "
+                           f"Last refused: {name}. Check jobs.jsonl for a looping workflow.",
+                           priority="high", tags="warning")
                 return self._send(429, {"error": "daily job cap reached", "cap": MAX_PER_DAY})
         if not job_lock.acquire(blocking=False):
             return self._send(409, {"error": "busy", "running": state["running"]})
@@ -198,5 +244,6 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print(f"[runner] listening on :{PORT}, jobs from {JOBS_DIR}, cap {MAX_PER_DAY}/day", flush=True)
+    print(f"[runner] listening on :{PORT}, jobs from {JOBS_DIR}, cap {MAX_PER_DAY}/day, "
+          f"ntfy {'on' if NTFY_URL else 'off'}", flush=True)
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()

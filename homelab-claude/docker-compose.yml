@@ -33,6 +33,10 @@ services:
       JOB_MODEL: ${JOB_MODEL:-haiku}
       HA_URL: ${HA_URL:-}
       HA_TOKEN: ${HA_TOKEN:-}
+      # Job notifications -> your phone (ntfy app). Internal URL: never leaves the docker network.
+      NTFY_URL: http://ntfy/${NTFY_TOPIC:-claude-jobs}
+      NTFY_TOKEN: ${NTFY_RUNNER_TOKEN:-}
+      NTFY_ON_OK: ${NTFY_ON_OK:-1}
       CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX: ${CLAUDE_HOSTNAME:-homelab}
     volumes:
       - ${DATA_ROOT:-/srv/claude}/home:/home/claude        # ~/.claude: login, transcripts, memory, settings
@@ -87,11 +91,38 @@ services:
       - "127.0.0.1:3000:3000"   # -> tailscale serve :8443
     networks: [claude-net]
 
-  # Optional: only if you don't already run n8n elsewhere.  docker compose --profile n8n up -d
+  # Push notifications for job results (and backup failures). Self-hosted: messages stay in
+  # ${DATA_ROOT}/ntfy. Login required for everything (auth-default-access: deny-all).
+  ntfy:
+    image: binwiederhier/ntfy:${NTFY_VERSION:-v2.11.0}
+    container_name: claude-ntfy
+    restart: unless-stopped
+    logging: *logging
+    user: "${PUID:-1000}:${PGID:-1000}"
+    command: ["serve"]
+    environment:
+      TZ: ${TZ:-Europe/Helsinki}
+      NTFY_BASE_URL: https://${TS_FQDN:-homelab.example.ts.net}:2586
+      NTFY_LISTEN_HTTP: ":80"
+      NTFY_BEHIND_PROXY: "true"
+      NTFY_CACHE_FILE: /var/lib/ntfy/cache.db
+      NTFY_CACHE_DURATION: 72h
+      NTFY_AUTH_FILE: /var/lib/ntfy/user.db
+      NTFY_AUTH_DEFAULT_ACCESS: deny-all
+      NTFY_ENABLE_LOGIN: "true"
+      # iPhone only: iOS gets instant pushes only via Apple, so ntfy.sh relays a "poll request"
+      # (message id + hashed topic, never the text); the app then fetches the message from HERE.
+      # Android users can set this empty in .env.
+      NTFY_UPSTREAM_BASE_URL: ${NTFY_UPSTREAM_BASE_URL-https://ntfy.sh}
+    volumes:
+      - ${DATA_ROOT:-/srv/claude}/ntfy:/var/lib/ntfy
+    ports:
+      - "127.0.0.1:2586:80"     # -> tailscale serve :2586 (and the host backup script)
+    networks: [claude-net]
+
   n8n:
     image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-latest}
     container_name: claude-n8n
-    profiles: ["n8n"]
     restart: unless-stopped
     logging: *logging
     user: "${PUID:-1000}:${PGID:-1000}"

@@ -1,6 +1,6 @@
 # خطة: كلود كله على الهوم لاب، وتوصله من أي حتة عبر Tailscale
 
-> **المعطيات:** سيرفر Debian + Docker · اشتراك Claude Pro · وصول بـ SSH/tmux + Web terminal + Remote Control · أتمتة بـ n8n و Home Assistant ومهام مجدولة.
+> **المعطيات:** سيرفر Debian + Docker · اشتراك Claude Pro · وصول بـ SSH/tmux + Web terminal + Remote Control · أتمتة بـ n8n (جديد، جوه نفس الـ stack) و Home Assistant ومهام مجدولة · إشعارات على ntfy · باك أب على نفس سيرفر الـ Debian.
 
 ## 0) الخلاصة في سطرين
 
@@ -17,7 +17,7 @@
 |---|---|
 | الكود والمشاريع والملفات | `/srv/claude/projects` على السيرفر بس |
 | تاريخ الجلسات (transcripts) والميموري والإعدادات وتسجيل الدخول | `/srv/claude/home/.claude` على السيرفر بس |
-| سجل الأتمتة واللوجز والمتريكس والداشبورد | `/srv/claude/{logs,prometheus,grafana}` على السيرفر بس |
+| سجل الأتمتة واللوجز والمتريكس والداشبورد | `/srv/claude/{logs,prometheus,grafana,n8n,ntfy}` على السيرفر بس |
 | تنفيذ الأوامر والأدوات | على السيرفر بس |
 | البرومبتات وردود الموديل | **بتعدّي على API بتاع Anthropic** (مفيش مهرب) |
 | جلسات **Remote Control** | transcript الجلسة **بيتخزن على سيرفرات Anthropic** طول ما هي متوصلة (موثّق رسميًا) |
@@ -37,19 +37,19 @@
      │  ③ تطبيق Claude ← Code ← "homelab"          (Remote Control، عبر Anthropic)
      ▼
 ┌──────────────── Debian homelab (Tailscale: tag:homelab) ────────────────┐
-│ tailscale serve (tailnet فقط):  :443→ttyd   :8443→Grafana   :10000→n8n  │
+│ tailscale serve (tailnet فقط): :443→ttyd :8443→Grafana :10000→n8n :2586→ntfy│
 │                                                                          │
 │  docker network: claude-net                                              │
 │  ┌─────────────── claude-box ───────────────┐                            │
 │  │ tmux "main": [work] شِل  +  [rc] remote-control                        │
 │  │ ttyd :7681 ──► نفس جلسة tmux                                           │
-│  │ claude-runner :8787 ◄── n8n / HA (jobs بقائمة بيضاء + حدود)            │
+│  │ claude-runner :8787 ◄── n8n / HA (jobs بقائمة بيضاء + حدود) ──► ntfy   │
 │  └──────┬───────────────────────────────────┘                            │
 │         │ OTLP                                  scrape                   │
 │         ▼                                         ▲                      │
 │  otel-collector ──► Prometheus ◄──────────────────┘ ──► Grafana          │
 │                                                                          │
-│  /srv/claude/{home,projects,logs,prometheus,grafana,n8n} ──► restic backup│
+│  /srv/claude/{…,n8n,ntfy} ──► restic ──► /var/backups/claude-restic (محلي)│
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -75,15 +75,31 @@
 cd /opt/homelab-claude
 cp .env.example .env && chmod 600 .env
 #  RUNNER_TOKEN=$(openssl rand -hex 32), GRAFANA_ADMIN_PASSWORD, TS_FQDN, HA_URL/HA_TOKEN
-sudo mkdir -p /srv/claude/{home,projects,logs,prometheus,grafana,n8n}
+sudo mkdir -p /srv/claude/{home,projects,logs,prometheus,grafana,n8n,ntfy}
 sudo chown -R 1000:1000 /srv/claude
-docker compose up -d --build            # أضف --profile n8n لو معندكش n8n أصلًا
+docker compose up -d --build            # بيشغّل كمان n8n و ntfy
 cc                                       # تدخل tmux جوه الحاوية
 claude                                   # أول مرة: /login بحساب Claude Pro
 ```
 بعد الـ login، شبّاك `rc` (Ctrl-b 1) هيشغّل Remote Control لوحده خلال دقيقة.
 
-✅ **اختبار:** `docker compose ps` يبيّن كله healthy/running. وجوه `cc` يظهر شبّاكين: `work` و `rc`.
+**n8n:** افتح `https://homelab.<tailnet>.ts.net:10000`، وأول مرة هيطلب منك تعمل حساب الـ owner. بعد ما يستقر، ثبّت `N8N_VERSION` في `.env` على النسخة اللي شغالة (`docker exec claude-n8n n8n --version`)، عشان الـ rebuild مايجيبش نسخة جديدة فجأة.
+
+**ntfy (الإشعارات):**
+```bash
+docker exec -it claude-ntfy ntfy user add --role=admin me   # يوزر وباسورد لتطبيق الموبايل
+docker exec claude-ntfy ntfy token add me                   # التوكن ده حطه في NTFY_RUNNER_TOKEN في .env
+docker compose up -d                                        # عشان claude-box ياخد التوكن
+```
+على الموبايل نزّل تطبيق **ntfy**، وضيف السيرفر `https://homelab.<tailnet>.ts.net:2586` باليوزر اللي عملته، واشترك في topic اسمه `claude-jobs`.
+- **آيفون:** التنبيه الفوري لازم يعدّي على Apple، فـ ntfy.sh بيوصّل «poll request» فيه رقم الرسالة بس (والـ topic متشفّر بـ hash). نص الرسالة نفسه التطبيق بيجيبه من سيرفرك عبر Tailscale. لو مش عايز ده خالص فضّي `NTFY_UPSTREAM_BASE_URL`، بس الإشعارات هتتأخر لحد ما تفتح التطبيق.
+- **أندرويد:** فضّي `NTFY_UPSTREAM_BASE_URL`، والتطبيق بيفضل متوصل بسيرفرك مباشرة.
+
+✅ **اختبار:** `docker compose ps` يبيّن كله running. وجوه `cc` يظهر شبّاكين: `work` و `rc`. وجرّب الإشعار:
+```bash
+curl -H "Authorization: Bearer <NTFY_RUNNER_TOKEN>" -d "تجربة من الهوم لاب" http://127.0.0.1:2586/claude-jobs
+```
+لازم يوصل على الموبايل حتى وهو على 4G (و Tailscale شغال).
 
 ### المرحلة 3: الوصول من أي حتة (3 طرق، نفس الجلسة)
 
@@ -105,11 +121,18 @@ claude                                   # أول مرة: /login بحساب Clau
 - عليه **سقف يومي** `JOB_MAX_RUNS_PER_DAY` (بعده 429)، فلو workflow عمل loop مش هيخلّص حدّ الأسبوع
 - بيسجّل كل تشغيل في `/srv/claude/logs/jobs.jsonl` وبيطلع metrics لـ Grafana
 
-**من n8n** (لو n8n في stack تاني، ضيفه على شبكة `claude-net`):
+**الإشعارات:** الـ runner نفسه بيبعت على ntfy بعد كل job:
+- ✅ لما يخلص: اسم الـ job والمدة والتوكنز وأول 400 حرف من النتيجة.
+- ❌ لما يفشل أو يعدّي الـ timeout: نفس الكلام وآخر سطور الخطأ، بأولوية عالية.
+- ⚠️ لما السقف اليومي يخلص: إشعار واحد في اليوم.
+
+لو إشعارات النجاح كتير وبتزعجك حط `NTFY_ON_OK=0` في `.env`، وساعتها هيوصلك الفشل بس. ومايفرقش مين نادى الـ job (n8n أو HA أو curl)، الإشعار بيوصل.
+
+**من n8n** (جوه نفس الـ stack وعلى شبكة `claude-net`):
 - Node **Schedule Trigger** (مثلًا 03:30) ← **HTTP Request**:
   `POST http://claude-box:8787/run/repo-review` · Header `Authorization: Bearer <RUNNER_TOKEN>`
-- الرد JSON فيه `result` و `usage` و `status`، فتوديه Telegram أو إيميل أو Home Assistant notification.
-- حط n8n **Error Trigger** workflow يبعتلك لو أي job رجع `status != ok`.
+- في الـ HTTP Request فعّل **Never Error** (أو Continue On Fail)، عشان 409 (مشغول) و 429 (السقف) مايوقفوش الـ workflow. وحط retry بعد 5 دقايق للـ 409.
+- n8n مش محتاج يبعت إشعار، الـ runner بيعمل ده. ولو workflow معيّن عايز إشعار مخصوص، يعمل POST على `http://ntfy/claude-jobs` بنفس التوكن.
 
 **الـ jobs الجاهزة:**
 | Job | بيعمل إيه | الموديل | ليه رخيص |
@@ -136,18 +159,39 @@ claude                                   # أول مرة: /login بحساب Clau
 - `tail -f /srv/claude/logs/jobs.jsonl | jq`: سجل الأتمتة
 - `/usage` و `/context` جوه كلود: إيه اللي واكل الـ context
 
-### المرحلة 6: الباك أب (15 دقيقة)
+### المرحلة 6: الباك أب على سيرفر الـ Debian نفسه (15 دقيقة)
 ```bash
-sudo apt install restic
+sudo apt install restic curl
 sudo install -m 755 host/backup.sh /usr/local/bin/claude-backup
-sudo install -m 600 /dev/null /etc/claude-backup.env   # واملاه زي ما مكتوب في أول backup.sh
+sudo install -m 600 /dev/null /etc/claude-backup.env
+sudoedit /etc/claude-backup.env        # الصق القيم اللي تحت
+```
+محتوى `/etc/claude-backup.env`:
+```ini
+RESTIC_REPOSITORY=/var/backups/claude-restic
+RESTIC_PASSWORD=<طلّعه بـ: openssl rand -base64 32، وانسخه في password manager>
+DATA_ROOT=/srv/claude
+STACK_DIR=/opt/homelab-claude
+NTFY_URL=http://127.0.0.1:2586/claude-jobs
+NTFY_TOKEN=<نفس NTFY_RUNNER_TOKEN>
+NTFY_ON_OK=0
+```
+وبعدين:
+```bash
 sudo cp host/claude-backup.{service,timer} /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now claude-backup.timer
-sudo claude-backup                                      # أول نسخة يدوي
+sudo claude-backup                     # أول نسخة يدوي
 ```
-الباك أب **مشفّر** (فيه tokens الدخول). **احفظ `RESTIC_PASSWORD` بره السيرفر.** ولازم الـ repository يبقى على **ديسك تاني أو NAS**، مش نفس الديسك.
+- الباك أب **مشفّر** (فيه tokens الدخول) وبيشتغل كل يوم الساعة 04:30. لو فشل هيوصلك إشعار على ntfy (حط `NTFY_ON_OK=1` لو عايز إشعار بالنجاح كمان).
+- **احفظ `RESTIC_PASSWORD` بره السيرفر.** من غيره الباك أب ملوش لازمة.
+- **حدود الباك أب على نفس السيرفر:** بيحميك من مسح بالغلط، أو تحديث بايظ، أو كلود يبوّظ ملفات (تقدر ترجع لأي يوم من آخر 7 أيام، أو أي أسبوع من آخر 5، أو أي شهر من آخر 12). بس **مش بيحميك لو الديسك نفسه باظ أو السيرفر اتسرق**. لو عندك ديسك تاني في نفس الجهاز اعمله mount على `/var/backups`، وده ببلاش وبيحل أغلب المشكلة.
+- السكريبت بيرفض يشتغل لو الـ repository جوه `/srv/claude`، عشان مايعملش باك أب لنفسه.
 
-✅ **اختبار:** `restic snapshots` وبعدين جرّب `restic restore latest --target /tmp/r --include /srv/claude/home/.claude/settings.json`.
+✅ **اختبار:**
+```bash
+sudo bash -c 'set -a; . /etc/claude-backup.env; restic snapshots'
+sudo bash -c 'set -a; . /etc/claude-backup.env; restic restore latest --target /tmp/r --include /srv/claude/home/.claude/settings.json'
+```
 
 ---
 
@@ -190,6 +234,8 @@ sudo claude-backup                                      # أول نسخة يدو
 | الـ web terminal مابيفتحش | `tailscale serve status`، واتأكد إن MagicDNS و HTTPS مفعّلين في لوحة Tailscale |
 | Grafana فاضية | `docker logs claude-otel`. وبعد أول جلسة كلود استنى 30 ثانية (فترة التصدير) |
 | job رجع 409 | فيه job تاني شغال. خلّي n8n يعمل retry بعد 5 دقايق |
+| مفيش إشعارات بتوصل | `docker logs claude-box 2>&1 \| grep ntfy` (لو 401 يبقى التوكن غلط). وعلى الموبايل اتأكد إن Tailscale شغال وإنك مشترك في `claude-jobs` |
+| `tailscale serve --https=2586` رفض | حدّث Tailscale. حد الـ 3 بورتات (443/8443/10000) موثّق لـ Funnel بس، مش لـ Serve |
 | job رجع 429 | السقف اليومي خلص. راجع `jobs.jsonl`، أكيد فيه workflow بيلفّ |
 | بعد `docker compose up --build` الجلسات المفتوحة اتقفلت | طبيعي. `claude --continue` يكمّل آخر جلسة (الـ transcripts محفوظة على الـ volume) |
 | تحديث كلود | غيّر `CLAUDE_CODE_VERSION` في `.env` ← `docker compose build claude-box && docker compose up -d` |
@@ -207,5 +253,5 @@ sudo claude-backup                                      # أول نسخة يدو
 
 ## 7) مراحل جاية (بعد ما الأساس يستقر)
 - **Loki** للـ OTel logs: تفاصيل كل request (الموديل والمدة والتوكنز لكل طلب).
-- **إشعارات** (ntfy على الـ tailnet) لما كلود يستنى موافقتك، عن طريق Notification hook.
+- **إشعار لما كلود يستنى موافقتك** في جلسة تفاعلية: Notification hook في `settings.json` يعمل POST على نفس ntfy. (إشعارات الـ jobs والباك أب خلاص اتعملت.)
 - **job لمراجعة الاستهلاك أسبوعيًا:** يقرا `jobs.jsonl` ويقترح أي job يتحوّل لـ haiku أو يتقلّل.
