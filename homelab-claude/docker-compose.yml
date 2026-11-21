@@ -1,0 +1,109 @@
+# Claude on the homelab: everything lives under ${DATA_ROOT} on this Debian host.
+# Nothing here is published to the LAN or the internet: every port binds to 127.0.0.1
+# and is exposed to your tailnet only through `tailscale serve` (see host/setup-tailscale.sh).
+name: claude-homelab
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+networks:
+  claude-net:
+    name: claude-net   # fixed name so an existing n8n / Home Assistant stack can join it
+
+services:
+  claude-box:
+    build:
+      context: ./claude-box
+      args:
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
+        PUID: ${PUID:-1000}
+        PGID: ${PGID:-1000}
+    image: claude-box:local
+    container_name: claude-box
+    hostname: ${CLAUDE_HOSTNAME:-homelab}
+    restart: unless-stopped
+    init: true
+    logging: *logging
+    environment:
+      TZ: ${TZ:-Europe/Helsinki}
+      RUNNER_TOKEN: ${RUNNER_TOKEN:?set RUNNER_TOKEN in .env}
+      JOB_MAX_RUNS_PER_DAY: ${JOB_MAX_RUNS_PER_DAY:-40}
+      JOB_TIMEOUT: ${JOB_TIMEOUT:-900}
+      JOB_MODEL: ${JOB_MODEL:-haiku}
+      HA_URL: ${HA_URL:-}
+      HA_TOKEN: ${HA_TOKEN:-}
+      CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX: ${CLAUDE_HOSTNAME:-homelab}
+    volumes:
+      - ${DATA_ROOT:-/srv/claude}/home:/home/claude        # ~/.claude: login, transcripts, memory, settings
+      - ${DATA_ROOT:-/srv/claude}/projects:/workspace      # all your code / working folders
+      - ${DATA_ROOT:-/srv/claude}/logs:/var/log/claude     # jobs.jsonl (automation audit log)
+      - ./jobs:/opt/claude-jobs:ro                         # whitelisted automation jobs
+    ports:
+      - "127.0.0.1:7681:7681"   # ttyd web terminal -> tailscale serve :443
+    networks: [claude-net]
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.115.1
+    container_name: claude-otel
+    restart: unless-stopped
+    logging: *logging
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./monitoring/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    networks: [claude-net]
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: claude-prometheus
+    restart: unless-stopped
+    logging: *logging
+    user: "${PUID:-1000}:${PGID:-1000}"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=400d
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ${DATA_ROOT:-/srv/claude}/prometheus:/prometheus
+    networks: [claude-net]
+
+  grafana:
+    image: grafana/grafana-oss:11.4.0
+    container_name: claude-grafana
+    restart: unless-stopped
+    logging: *logging
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ${DATA_ROOT:-/srv/claude}/grafana:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana-dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"   # -> tailscale serve :8443
+    networks: [claude-net]
+
+  # Optional: only if you don't already run n8n elsewhere.  docker compose --profile n8n up -d
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-latest}
+    container_name: claude-n8n
+    profiles: ["n8n"]
+    restart: unless-stopped
+    logging: *logging
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      GENERIC_TIMEZONE: ${TZ:-Europe/Helsinki}
+      TZ: ${TZ:-Europe/Helsinki}
+      WEBHOOK_URL: https://${TS_FQDN:-homelab.example.ts.net}:10000/
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+    volumes:
+      - ${DATA_ROOT:-/srv/claude}/n8n:/home/node/.n8n
+    ports:
+      - "127.0.0.1:5678:5678"   # -> tailscale serve :10000
+    networks: [claude-net]
