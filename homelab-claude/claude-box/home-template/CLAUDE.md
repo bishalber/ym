@@ -8,3 +8,4 @@
 - For broad searches, use a subagent with model haiku and return only the conclusion.
 - Ask before large refactors or anything touching more than ~5 files.
 - Project-specific rules go in that project's own CLAUDE.md, not here.
+- If `ncfiles` exists, it reads my Nextcloud files read-only (`ncfiles ls`, `find`, `get`, `cat`). Find by name first; never download whole folders.

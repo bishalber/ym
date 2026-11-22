@@ -124,6 +124,22 @@ services:
 - **أي فولدر فيه configs أو قواعد بيانات تطبيقات:** خبّيه بـ tmpfs زي المثال، عشان كلود مايقراش passwords ويبعتها في برومبت.
 - **read-write:** شيل `:ro` من فولدر معيّن بس، ولما تبقى متأكد. والباك أب مش بيغطي الفولدرات دي.
 
+### المرحلة 2ج: ملفات Nextcloud (read-only، حتى لو متشفّرة)
+لو الـ server-side encryption شغال في Nextcloud، الملفات على الديسك متشفّرة، فالـ mount مش هينفع. البديل إن كلود يقرا من خلال Nextcloud نفسه (WebDAV)، و Nextcloud هو اللي بيفك التشفير.
+
+المشكلة إن الـ app password في Nextcloud مينفعش يتحدد read-only. عشان كده الباسورد بيتحط في حاوية صغيرة لوحدها اسمها **`nextcloud-ro`**. الحاوية دي بتعدّي 3 حاجات بس: عرض فولدر، وتنزيل ملف، والبحث بالاسم. أي حاجة تانية (رفع، مسح، نقل، تعديل) بترجع 405. و `claude-box` مابيشوفش الباسورد خالص.
+
+1. في Nextcloud: **Settings ← Security ← Create new app password**، وسمّيه `claude-ro`.
+2. على السيرفر، ضيفه في `.env` من غير ما يظهر على الشاشة:
+   ```bash
+   read -rsp 'App password: ' P && echo && printf 'NEXTCLOUD_APP_PASSWORD=%s\n' "$P" >> .env && unset P
+   ```
+   وضيف كمان `COMPOSE_PROFILES=nextcloud` و `NEXTCLOUD_USER=<اسمك في Nextcloud>`. ولو Nextcloud مش على بورت 8080 على نفس الجهاز، غيّر `NEXTCLOUD_UPSTREAM` و `NEXTCLOUD_HOST_HEADER`.
+3. `docker compose up -d --build`
+4. جوه كلود: `ncfiles ls` و `ncfiles find <اسم>` و `ncfiles get <path>` و `ncfiles cat <path>`.
+
+> أي حاوية تانية على `claude-net` (زي n8n لو وصّلته) هتقدر تقرا ملفات Nextcloud بنفس الطريقة. ده read-only، بس خلي بالك منه.
+
 ### المرحلة 3: الوصول من أي حتة (3 طرق، نفس الجلسة)
 
 | الطريقة | إمتى | إزاي |

@@ -37,6 +37,7 @@ RUN groupadd -g "${PGID}" claude \
 
 COPY --chmod=755 entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY --chmod=755 runner.py /usr/local/bin/claude-runner
+COPY --chmod=755 ncfiles /usr/local/bin/ncfiles
 COPY --chmod=644 tmux.conf /etc/tmux.conf
 COPY home-template/ /opt/home-template/
 

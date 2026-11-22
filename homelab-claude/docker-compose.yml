@@ -135,6 +135,30 @@ services:
       - "127.0.0.1:2586:80"     # -> tailscale serve :2586 (and the host backup script)
     networks: [claude-net]
 
+  # Read-only door to your Nextcloud files for claude-box. It holds the Nextcloud app password,
+  # so claude-box never does, and it forwards only list / download / name-search requests.
+  # Enable with COMPOSE_PROFILES=nextcloud in .env (see PLAN.md, phase 2c).
+  nextcloud-ro:
+    image: python:3.12-alpine3.20
+    container_name: claude-nextcloud-ro
+    profiles: ["nextcloud"]
+    restart: unless-stopped
+    mem_limit: 64m
+    memswap_limit: 64m
+    logging: *logging
+    user: "65534:65534"
+    read_only: true
+    command: ["python3", "-u", "/app/proxy.py"]
+    environment:
+      NC_UPSTREAM: ${NEXTCLOUD_UPSTREAM:-http://host.docker.internal:8080}
+      NC_HOST_HEADER: ${NEXTCLOUD_HOST_HEADER:-localhost:8080}
+      NC_USER: ${NEXTCLOUD_USER:-}
+      NC_APP_PASSWORD: ${NEXTCLOUD_APP_PASSWORD:-}
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ./nextcloud-ro/proxy.py:/app/proxy.py:ro
+    networks: [claude-net]
+
   # Only for a machine WITHOUT n8n. If you already run n8n, leave this off and attach your n8n
   # to the claude-net network instead (PLAN.md, phase 4).   docker compose --profile n8n up -d
   n8n:
