@@ -11,9 +11,22 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DISABLE_AUTOUPDATER=1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates curl git tmux ttyd python3 nodejs npm jq ripgrep less \
+        ca-certificates curl git tmux python3 nodejs npm jq ripgrep less \
         openssh-client procps tzdata vim-tiny \
     && rm -rf /var/lib/apt/lists/*
+
+# ttyd is not packaged in Debian trixie: use the upstream static binary, pinned and checksum-verified.
+ARG TTYD_VERSION=1.7.7
+RUN set -eu; \
+    case "$(dpkg --print-architecture)" in \
+      amd64) f=ttyd.x86_64;  sum=8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55 ;; \
+      arm64) f=ttyd.aarch64; sum=b38acadd89d1d396a0f5649aa52c539edbad07f4bc7348b27b4f4b7219dd4165 ;; \
+      *) echo "no ttyd build for this architecture" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /usr/local/bin/ttyd "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/${f}"; \
+    echo "${sum}  /usr/local/bin/ttyd" | sha256sum -c -; \
+    chmod 755 /usr/local/bin/ttyd; \
+    ttyd --version
 
 # Claude Code + ccusage (reads local transcripts to show your Pro 5-hour window usage)
 RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" ccusage \
