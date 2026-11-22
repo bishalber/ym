@@ -108,6 +108,22 @@ curl -H "Authorization: Bearer <NTFY_RUNNER_TOKEN>" -d "تجربة من الهو
 ```
 لازم يوصل على الموبايل حتى وهو على 4G (و Tailscale شغال).
 
+### المرحلة 2ب: كلود يشوف ملفاتك (read-only)
+الحاوية مابتشوفش غير `/workspace` إلا لو إنت ضفت فولدرات. كل فولدر بيتضاف **read-only** تحت `/data/...` في ملف `docker-compose.override.yml` على السيرفر بس. الملف ده في `.gitignore`، لأن المسارات بتاعتك شخصية والريبو public. والـ compose بيقراه لوحده.
+```yaml
+services:
+  claude-box:
+    volumes:
+      - /path/to/nextcloud-data/<user>/files:/data/nextcloud:ro
+      - /path/to/shared:/data/shared:ro
+      - type: tmpfs              # يخبّي فولدر جوه mount (مثلًا configs فيها passwords)
+        target: /data/shared/secrets
+```
+وبعدها `docker compose up -d`. خلّي كلود يعرف بيهم بسطر في `/srv/claude/home/.claude/CLAUDE.md`.
+- **Nextcloud:** اعمل mount لفولدر `files` بتاع اليوزر مباشرة، مش لفولدر `data` كله. ولو الـ server-side encryption شغال، الملفات على الديسك متشفّرة وكلود مش هيقدر يقراها.
+- **أي فولدر فيه configs أو قواعد بيانات تطبيقات:** خبّيه بـ tmpfs زي المثال، عشان كلود مايقراش passwords ويبعتها في برومبت.
+- **read-write:** شيل `:ro` من فولدر معيّن بس، ولما تبقى متأكد. والباك أب مش بيغطي الفولدرات دي.
+
 ### المرحلة 3: الوصول من أي حتة (3 طرق، نفس الجلسة)
 
 | الطريقة | إمتى | إزاي |
