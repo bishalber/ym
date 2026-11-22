@@ -7,6 +7,10 @@ x-logging: &logging
   driver: json-file
   options: { max-size: "10m", max-file: "3" }
 
+# Memory caps: the host is shared with Nextcloud, Immich, n8n, Home Assistant... If a container
+# hits its cap, the kernel kills a process INSIDE that container instead of freezing the host.
+# memswap_limit == mem_limit means "no swap" for that container.
+
 networks:
   claude-net:
     name: claude-net   # fixed name so an existing n8n / Home Assistant stack can join it
@@ -23,6 +27,9 @@ services:
     container_name: claude-box
     hostname: ${CLAUDE_HOSTNAME:-homelab}
     restart: unless-stopped
+    mem_limit: ${CLAUDE_MEM_LIMIT:-1536m}     # ~2-3 Claude sessions at once; raise if you add RAM
+    memswap_limit: ${CLAUDE_MEM_LIMIT:-1536m}
+    pids_limit: 512
     init: true
     logging: *logging
     environment:
@@ -51,6 +58,8 @@ services:
     image: otel/opentelemetry-collector-contrib:0.115.1
     container_name: claude-otel
     restart: unless-stopped
+    mem_limit: 192m
+    memswap_limit: 192m
     logging: *logging
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
@@ -61,6 +70,8 @@ services:
     image: prom/prometheus:v3.1.0
     container_name: claude-prometheus
     restart: unless-stopped
+    mem_limit: 384m
+    memswap_limit: 384m
     logging: *logging
     user: "${PUID:-1000}:${PGID:-1000}"
     command:
@@ -76,6 +87,8 @@ services:
     image: grafana/grafana-oss:11.4.0
     container_name: claude-grafana
     restart: unless-stopped
+    mem_limit: 256m
+    memswap_limit: 256m
     logging: *logging
     user: "${PUID:-1000}:${PGID:-1000}"
     environment:
@@ -97,6 +110,8 @@ services:
     image: binwiederhier/ntfy:${NTFY_VERSION:-v2.11.0}
     container_name: claude-ntfy
     restart: unless-stopped
+    mem_limit: 96m
+    memswap_limit: 96m
     logging: *logging
     user: "${PUID:-1000}:${PGID:-1000}"
     command: ["serve"]
