@@ -1,28 +1,24 @@
-// Paste into https://login.tailscale.com/admin/acls (merge with what you have).
-// Only YOU can reach the homelab, and only on the ports this setup uses.
-// Replace you@example.com with your Tailscale login.
+// Do NOT paste this over your whole policy: a tailnet policy is "deny unless allowed", so
+// replacing it cuts off everything it doesn't list (Nextcloud, Immich, n8n, other devices...).
+//
+// Phase 1 needs only ONE thing from the policy: an "ssh" rule that lets you into your own
+// machines. The default Tailscale policy already has exactly this; check that your policy at
+// https://login.tailscale.com/admin/acls contains it, and add it inside the top-level { } if not.
 {
-  "tagOwners": {
-    "tag:homelab": ["autogroup:admin"]
-  },
-
-  "grants": [
-    {
-      // your own devices -> homelab: web terminal, Grafana, n8n, ntfy
-      "src": ["you@example.com"],
-      "dst": ["tag:homelab"],
-      "ip":  ["tcp:443", "tcp:8443", "tcp:10000", "tcp:2586"]
-    }
-  ],
-
   "ssh": [
     {
-      // "check" = re-confirm your identity in the browser every 12h before SSH is allowed
+      // "check" = re-confirm your identity in the browser (every 12h) before SSH is allowed.
+      // autogroup:self = only devices that belong to YOU, logged in as you.
       "action": "check",
       "checkPeriod": "12h",
-      "src":    ["you@example.com"],
-      "dst":    ["tag:homelab"],
+      "src":    ["autogroup:member"],
+      "dst":    ["autogroup:self"],
       "users":  ["autogroup:nonroot", "root"]
     }
   ]
+
+  // Later, optional hardening once everything works: tag the server and allow only your own
+  // devices on the claude ports. Not needed while you are the only user of the tailnet, and
+  // tagging changes who owns the node (Funnel needs a nodeAttrs entry for the tag), so skip it
+  // for now.
 }

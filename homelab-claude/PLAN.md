@@ -32,12 +32,12 @@
 
 ```
   موبايلك / لابتوبك / أي جهاز عليه Tailscale
-     │  ① ssh homelab → cc            (Tailscale SSH + tmux)
-     │  ② https://homelab.<tailnet>.ts.net        (web terminal)
+     │  ① ssh <server> → cc           (Tailscale SSH + tmux)
+     │  ② https://<server>.<tailnet>.ts.net:8449  (web terminal)
      │  ③ تطبيق Claude ← Code ← "homelab"          (Remote Control، عبر Anthropic)
      ▼
-┌──────────────── Debian homelab (Tailscale: tag:homelab) ────────────────┐
-│ tailscale serve (tailnet فقط): :443→ttyd :8443→Grafana :10000→n8n :2586→ntfy│
+┌──────────── Debian homelab (نفس جهازك في Tailscale، من غير tags) ────────┐
+│ tailscale serve (tailnet فقط): :8449→ttyd  :8450→Grafana  :2586→ntfy     │
 │                                                                          │
 │  docker network: claude-net                                              │
 │  ┌─────────────── claude-box ───────────────┐                            │
@@ -59,16 +59,23 @@
 
 ## 3) التنفيذ خطوة بخطوة
 
-### المرحلة 1: Tailscale والأمان (30 دقيقة)
-1. في https://login.tailscale.com/admin/acls الزق محتوى `host/tailscale-acl.hujson` وعدّله بإيميلك. **لازم الأول**، عشان `tag:homelab` يبقى موجود.
-2. انسخ الفولدر ده على السيرفر في `/opt/homelab-claude` وشغّل:
-   ```bash
-   sudo TS_HOSTNAME=homelab bash host/setup-tailscale.sh
-   ```
-3. على الموبايل نزّل Tailscale وسجّل بنفس الحساب. **فعّل MagicDNS و HTTPS Certificates** من لوحة Tailscale.
-4. **اقفل SSH العادي على الـ LAN** (اختياري لكن أفضل): `sudo ufw allow in on tailscale0 && sudo ufw deny 22`.
+### المرحلة 1: Tailscale (15 دقيقة)
+الخطوة دي معمولة لسيرفر **متسجّل في Tailscale من قبل وعليه apps شغالة** (Nextcloud و n8n وغيرهم). مش بتغيّر اسم الجهاز ولا بتضيف tags ولا بتلمس أي بورت مستخدم. بتعمل حاجتين بس: بتشغّل Tailscale SSH، وبتفتح 3 بورتات جديدة جوه الـ tailnet بس.
 
-✅ **اختبار:** من الموبايل على 4G (مش الواي فاي) جرّب `ssh homelab`. لازم يطلب تأكيد هويتك في المتصفح (check mode) ويدخل.
+1. **الـ ACL:** افتح https://login.tailscale.com/admin/acls واتأكد إن فيه قاعدة `ssh` زي اللي في `host/tailscale-acl.hujson`. لو مش موجودة ضيفها. **ماتلزقش الملف مكان الـ policy كلها**، لأن ده هيقفل أي حاجة مش مكتوبة فيه.
+2. **السكريبت** (من `/opt/homelab-claude`):
+   ```bash
+   sudo bash host/setup-tailscale.sh
+   ```
+   لو أي بورت من 8449 و 8450 و 2586 مستخدم، السكريبت هيرفض من غير ما يغيّر حاجة. تقدر تختار بورتات تانية بـ `TTYD_PORT=... GRAFANA_PORT=... NTFY_PORT=...`.
+   في الآخر هيطبعلك `TS_FQDN` اللي هتحطه في `.env` في المرحلة 2.
+3. **الموبايل:** Tailscale متسجّل بنفس الحساب، و **MagicDNS و HTTPS Certificates** مفعّلين (لو بتفتح Nextcloud بـ `https://…ts.net` يبقى مفعّلين أصلًا).
+4. **SSH العادي على الـ LAN:** سيبه زي ما هو دلوقتي، لأنه الطريق الاحتياطي لو Tailscale وقع. ممكن تقفله بعدين لما كل حاجة تستقر.
+
+✅ **اختبار:**
+- من اللابتوب: `ssh <user>@<server>` (اسم الجهاز في `tailscale status`). أول مرة هيفتحلك صفحة في المتصفح تأكّد فيها هويتك (check mode)، وبعدها يدخل.
+- من الموبايل على 4G (مش الواي فاي): نفس الكلام من Termius أو أي تطبيق SSH.
+- `sudo tailscale serve status`: البورتات القديمة زي ما هي، وفيه 3 جداد (8449 و 8450 و 2586). اللي بيوجّهوا على 7681 و 3000 و 2586 هيدّوا 502 لحد ما الحاويات تشتغل في المرحلة 2، وده طبيعي.
 
 ### المرحلة 2: claude-box (20 دقيقة)
 ```bash
@@ -83,7 +90,7 @@ claude                                   # أول مرة: /login بحساب Clau
 ```
 بعد الـ login، شبّاك `rc` (Ctrl-b 1) هيشغّل Remote Control لوحده خلال دقيقة.
 
-**n8n:** افتح `https://homelab.<tailnet>.ts.net:10000`، وأول مرة هيطلب منك تعمل حساب الـ owner. بعد ما يستقر، ثبّت `N8N_VERSION` في `.env` على النسخة اللي شغالة (`docker exec claude-n8n n8n --version`)، عشان الـ rebuild مايجيبش نسخة جديدة فجأة.
+**n8n:** لو عندك n8n شغال قبل كده، **ماتشغّلش** اللي في الملف ده (هو ورا `--profile n8n`، ومش بيشتغل غير لو طلبته). هنوصّل الـ n8n بتاعك بـ `claude-net` في المرحلة 4.
 
 **ntfy (الإشعارات):**
 ```bash
@@ -91,7 +98,7 @@ docker exec -it claude-ntfy ntfy user add --role=admin me   # يوزر وباس�
 docker exec claude-ntfy ntfy token add me                   # التوكن ده حطه في NTFY_RUNNER_TOKEN في .env
 docker compose up -d                                        # عشان claude-box ياخد التوكن
 ```
-على الموبايل نزّل تطبيق **ntfy**، وضيف السيرفر `https://homelab.<tailnet>.ts.net:2586` باليوزر اللي عملته، واشترك في topic اسمه `claude-jobs`.
+على الموبايل نزّل تطبيق **ntfy**، وضيف السيرفر `https://<server>.<tailnet>.ts.net:2586` باليوزر اللي عملته، واشترك في topic اسمه `claude-jobs`.
 - **آيفون:** التنبيه الفوري لازم يعدّي على Apple، فـ ntfy.sh بيوصّل «poll request» فيه رقم الرسالة بس (والـ topic متشفّر بـ hash). نص الرسالة نفسه التطبيق بيجيبه من سيرفرك عبر Tailscale. لو مش عايز ده خالص فضّي `NTFY_UPSTREAM_BASE_URL`، بس الإشعارات هتتأخر لحد ما تفتح التطبيق.
 - **أندرويد:** فضّي `NTFY_UPSTREAM_BASE_URL`، والتطبيق بيفضل متوصل بسيرفرك مباشرة.
 
@@ -105,8 +112,8 @@ curl -H "Authorization: Bearer <NTFY_RUNNER_TOKEN>" -d "تجربة من الهو
 
 | الطريقة | إمتى | إزاي |
 |---|---|---|
-| **SSH + tmux** | شغل جد من لابتوب أو Termius/Termux | `ssh -t homelab cc` |
-| **Web terminal** | من أي متصفح على جهاز عليه Tailscale، من غير تطبيقات | `https://homelab.<tailnet>.ts.net` |
+| **SSH + tmux** | شغل جد من لابتوب أو Termius/Termux | `ssh -t <server> cc` |
+| **Web terminal** | من أي متصفح على جهاز عليه Tailscale، من غير تطبيقات | `https://<server>.<tailnet>.ts.net:8449` |
 | **Remote Control** | من تطبيق Claude على الموبايل بواجهة مريحة | تطبيق Claude ← Code ← جلسة `homelab` |
 
 الطرق الـ 3 بتوصل لنفس الـ tmux، يعني تبدأ مهمة من اللابتوب وتكمّلها من الموبايل. ولو قفلت الاتصال الجلسة بتفضل شغالة (Ctrl-b d للخروج من غير ما توقفها).
@@ -128,7 +135,17 @@ curl -H "Authorization: Bearer <NTFY_RUNNER_TOKEN>" -d "تجربة من الهو
 
 لو إشعارات النجاح كتير وبتزعجك حط `NTFY_ON_OK=0` في `.env`، وساعتها هيوصلك الفشل بس. ومايفرقش مين نادى الـ job (n8n أو HA أو curl)، الإشعار بيوصل.
 
-**من n8n** (جوه نفس الـ stack وعلى شبكة `claude-net`):
+**من n8n:** الـ n8n لازم يبقى على شبكة `claude-net` عشان يوصل لـ `claude-box`. لو n8n بتاعك في compose تاني، ضيف في الـ compose بتاعه:
+```yaml
+services:
+  n8n:
+    networks: [default, claude-net]
+networks:
+  claude-net:
+    external: true
+```
+وبعدين `docker compose up -d` في فولدر الـ n8n. (أو مؤقتًا: `docker network connect claude-net <اسم حاوية n8n>`، بس دي بتروح لما الحاوية تتعمل من جديد.)
+
 - Node **Schedule Trigger** (مثلًا 03:30) ← **HTTP Request**:
   `POST http://claude-box:8787/run/repo-review` · Header `Authorization: Bearer <RUNNER_TOKEN>`
 - في الـ HTTP Request فعّل **Never Error** (أو Continue On Fail)، عشان 409 (مشغول) و 429 (السقف) مايوقفوش الـ workflow. وحط retry بعد 5 دقايق للـ 409.
@@ -149,7 +166,7 @@ curl -H "Authorization: Bearer <NTFY_RUNNER_TOKEN>" -d "تجربة من الهو
 - ومن HA نفسه تقدر تنادي الـ runner بـ `rest_command` (نفس الـ POST).
 
 ### المرحلة 5: المتابعة (Grafana)
-افتح `https://homelab.<tailnet>.ts.net:8443`، ولوحة **Claude homelab** متجهّزة لوحدها:
+افتح `https://<server>.<tailnet>.ts.net:8450`، ولوحة **Claude homelab** متجهّزة لوحدها:
 - **فوق:** توكنز آخر 24 ساعة، نسبة الـ cache (كل ما تعلى كل ما أرخص)، تكلفة تقديرية (Pro سعره ثابت، فاستخدمها كمقياس «وزن»)، عدد الجلسات، والتوكنز بالساعة حسب النوع والموديل.
 - **تحت (تدفّق الأتمتة):** تشغيلات النهارده مقابل السقف، الفاشل والـ timeout، job شغال دلوقتي؟، كام ساعة من آخر تشغيل لكل job (لو job وقف تعرف)، والتوكنز لكل job في 7 أيام.
 
@@ -230,12 +247,12 @@ sudo bash -c 'set -a; . /etc/claude-backup.env; restic restore latest --target /
 | المشكلة | الحل |
 |---|---|
 | شبّاك `rc` بيقول not logged in | `cc` ← شبّاك 0 ← `claude` ← `/login` |
-| `tailscale up --advertise-tags` بيرفض | الـ ACL لازم يتحفظ الأول وفيه `tag:homelab` |
+| `ssh` بيطلب باسورد بدل صفحة Tailscale | Tailscale SSH مش شغال: `tailscale debug prefs \| grep RunSSH` لازم يبقى `true`، وقاعدة `ssh` لازم تكون في الـ ACL |
 | الـ web terminal مابيفتحش | `tailscale serve status`، واتأكد إن MagicDNS و HTTPS مفعّلين في لوحة Tailscale |
 | Grafana فاضية | `docker logs claude-otel`. وبعد أول جلسة كلود استنى 30 ثانية (فترة التصدير) |
 | job رجع 409 | فيه job تاني شغال. خلّي n8n يعمل retry بعد 5 دقايق |
 | مفيش إشعارات بتوصل | `docker logs claude-box 2>&1 \| grep ntfy` (لو 401 يبقى التوكن غلط). وعلى الموبايل اتأكد إن Tailscale شغال وإنك مشترك في `claude-jobs` |
-| `tailscale serve --https=2586` رفض | حدّث Tailscale. حد الـ 3 بورتات (443/8443/10000) موثّق لـ Funnel بس، مش لـ Serve |
+| `tailscale serve --https=2586` رفض | حدّث Tailscale. حد الـ 3 بورتات (443/8443/10000) موثّق لـ Funnel بس، مش لـ Serve. أو اختار بورت تاني بـ `NTFY_PORT=` وغيّر `NTFY_BASE_URL` |
 | job رجع 429 | السقف اليومي خلص. راجع `jobs.jsonl`، أكيد فيه workflow بيلفّ |
 | بعد `docker compose up --build` الجلسات المفتوحة اتقفلت | طبيعي. `claude --continue` يكمّل آخر جلسة (الـ transcripts محفوظة على الـ volume) |
 | تحديث كلود | غيّر `CLAUDE_CODE_VERSION` في `.env` ← `docker compose build claude-box && docker compose up -d` |

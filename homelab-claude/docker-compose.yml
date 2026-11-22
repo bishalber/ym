@@ -44,7 +44,7 @@ services:
       - ${DATA_ROOT:-/srv/claude}/logs:/var/log/claude     # jobs.jsonl (automation audit log)
       - ./jobs:/opt/claude-jobs:ro                         # whitelisted automation jobs
     ports:
-      - "127.0.0.1:7681:7681"   # ttyd web terminal -> tailscale serve :443
+      - "127.0.0.1:7681:7681"   # ttyd web terminal -> tailscale serve :8449
     networks: [claude-net]
 
   otel-collector:
@@ -88,7 +88,7 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./monitoring/grafana/dashboards:/var/lib/grafana-dashboards:ro
     ports:
-      - "127.0.0.1:3000:3000"   # -> tailscale serve :8443
+      - "127.0.0.1:3000:3000"   # -> tailscale serve :8450
     networks: [claude-net]
 
   # Push notifications for job results (and backup failures). Self-hosted: messages stay in
@@ -120,9 +120,12 @@ services:
       - "127.0.0.1:2586:80"     # -> tailscale serve :2586 (and the host backup script)
     networks: [claude-net]
 
+  # Only for a machine WITHOUT n8n. If you already run n8n, leave this off and attach your n8n
+  # to the claude-net network instead (PLAN.md, phase 4).   docker compose --profile n8n up -d
   n8n:
     image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-latest}
     container_name: claude-n8n
+    profiles: ["n8n"]
     restart: unless-stopped
     logging: *logging
     user: "${PUID:-1000}:${PGID:-1000}"
