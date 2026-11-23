@@ -1,0 +1,10 @@
+[Unit]
+Description=Backup Claude homelab data (restic)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/claude-backup
+Nice=10
+IOSchedulingClass=idle

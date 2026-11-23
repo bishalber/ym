@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+"""ncfiles: read your Nextcloud files from claude-box (read-only, via the nextcloud-ro proxy).
+
+  ncfiles ls   [path]            list a folder (default: your Nextcloud root)
+  ncfiles find <text> [path]     find files whose NAME contains <text> (max 200)
+  ncfiles get  <path> [dest]     download a file (default dest: /tmp/ncfiles/<name>)
+  ncfiles cat  <path>            print a text file (refuses files over 1 MB)
+
+Paths are relative to your Nextcloud root, e.g. "Documents/taxes/2026.pdf".
+Nothing here can change, move or delete anything in Nextcloud.
+"""
+import os
+import sys
+import urllib.error
+import urllib.request
+import xml.etree.ElementTree as ET
+from urllib.parse import quote, unquote, urlencode
+
+BASE = os.environ.get("NCFILES_URL", "http://nextcloud-ro:8080").rstrip("/")
+NS = {"d": "DAV:"}
+MAX_CAT = 1_000_000
+
+
+def req(method: str, url: str, headers: dict | None = None):
+    try:
+        return urllib.request.urlopen(urllib.request.Request(url, method=method, headers=headers or {}),
+                                      timeout=120)
+    except urllib.error.HTTPError as e:
+        msg = e.read().decode("utf-8", "replace").strip()[:300]
+        sys.exit(f"ncfiles: {e.code} {msg or e.reason}")
+    except urllib.error.URLError as e:
+        sys.exit(f"ncfiles: cannot reach {BASE} ({e.reason}). Is the nextcloud-ro container running?")
+
+
+def files_url(path: str) -> str:
+    return BASE + "/files/" + quote(path.strip("/"))
+
+
+def human(n: str) -> str:
+    if not n:
+        return ""
+    size = float(n)
+    for unit in ("B", "K", "M", "G", "T"):
+        if size < 1024 or unit == "T":
+            return f"{size:.0f}{unit}" if unit == "B" else f"{size:.1f}{unit}"
+        size /= 1024
+
+
+def entries(xml_bytes: bytes):
+    """Yield (relative_path, is_dir, size, modified) from a WebDAV multistatus."""
+    for r in ET.fromstring(xml_bytes).findall("d:response", NS):
+        href = unquote(r.findtext("d:href", "", NS))
+        rel = href.split("/remote.php/dav/files/", 1)[-1].split("/", 1)[-1] if "/remote.php/dav/files/" in href else href
+        prop = r.find("d:propstat/d:prop", NS)
+        is_dir = prop is not None and prop.find("d:resourcetype/d:collection", NS) is not None
+        size = prop.findtext("d:getcontentlength", "", NS) if prop is not None else ""
+        mod = prop.findtext("d:getlastmodified", "", NS) if prop is not None else ""
+        yield rel, is_dir, size, mod
+
+
+def show(rows, skip_first=False):
+    rows = list(rows)[1 if skip_first else 0:]
+    for rel, is_dir, size, mod in sorted(rows, key=lambda x: (not x[1], x[0].lower())):
+        print(f"{'d' if is_dir else '-'} {human(size):>7}  {mod[5:16]:<11}  {rel}{'/' if is_dir and not rel.endswith('/') else ''}")
+    if not rows:
+        print("(empty)")
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return
+    cmd, args = argv[0], argv[1:]
+    if cmd == "ls":
+        resp = req("PROPFIND", files_url(args[0] if args else ""), {"Depth": "1"})
+        show(entries(resp.read()), skip_first=True)
+    elif cmd == "find" and args:
+        q = {"q": args[0]}
+        if len(args) > 1:
+            q["path"] = args[1]
+        show(entries(req("GET", f"{BASE}/find?{urlencode(q)}").read()))
+    elif cmd == "get" and args:
+        dest = args[1] if len(args) > 1 else os.path.join("/tmp/ncfiles", os.path.basename(args[0].rstrip("/")))
+        os.makedirs(os.path.dirname(os.path.abspath(dest)), exist_ok=True)
+        with req("GET", files_url(args[0])) as resp, open(dest, "wb") as fh:
+            while chunk := resp.read(1 << 16):
+                fh.write(chunk)
+        print(f"saved {dest} ({human(str(os.path.getsize(dest)))})")
+    elif cmd == "cat" and args:
+        head = req("HEAD", files_url(args[0]))
+        if int(head.headers.get("Content-Length") or 0) > MAX_CAT:
+            sys.exit("ncfiles: file is over 1 MB; use `ncfiles get` and read only the part you need")
+        sys.stdout.write(req("GET", files_url(args[0])).read().decode("utf-8", "replace"))
+    else:
+        sys.exit(__doc__.strip())
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
