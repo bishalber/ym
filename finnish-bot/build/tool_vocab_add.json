@@ -1,0 +1,176 @@
+[
+ {
+  "id": "FItoolVocabAdd01",
+  "name": "Finnish - tool vocab_add",
+  "active": false,
+  "settings": {
+   "executionOrder": "v1",
+   "timezone": "Europe/Helsinki"
+  },
+  "nodes": [
+   {
+    "id": "ae51d23e-925d-559c-8b96-8acc26d67dc2",
+    "name": "When called",
+    "type": "n8n-nodes-base.executeWorkflowTrigger",
+    "typeVersion": 1.1,
+    "position": [
+     240,
+     0
+    ],
+    "parameters": {
+     "inputSource": "workflowInputs",
+     "workflowInputs": {
+      "values": [
+       {
+        "name": "words"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "e211b281-765f-5f85-85ce-f13b2313bfe6",
+    "name": "Load",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     480,
+     0
+    ],
+    "parameters": {
+     "method": "GET",
+     "url": "https://YOUR-NEXTCLOUD/remote.php/dav/files/YOUR-USER/FinnishBot/vocab.json",
+     "authentication": "genericCredentialType",
+     "genericAuthType": "httpBasicAuth",
+     "options": {
+      "timeout": 30000,
+      "response": {
+       "response": {
+        "fullResponse": true,
+        "neverError": true,
+        "responseFormat": "text"
+       }
+      }
+     }
+    },
+    "credentials": {
+     "httpBasicAuth": {
+      "id": "REPLACE_NEXTCLOUD",
+      "name": "Nextcloud FinnishBot"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "id": "d4dbcf82-1515-545b-8557-80cfba498300",
+    "name": "Logic",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     720,
+     0
+    ],
+    "parameters": {
+     "mode": "runOnceForAllItems",
+     "jsCode": "const TZ = 'Europe/Helsinki';\nconst body = (n) => { try { const j = $(n).first().json; return j.statusCode === 200 ? String(j.body || '') : ''; } catch (e) { return ''; } };\nconst parse = (s, d) => { try { const v = JSON.parse(s); return v || d; } catch (e) { return d; } };\nconst now = $now.setZone(TZ);\nconst ymd = (n) => now.plus({ days: n }).toFormat('yyyy-LL-dd');\nconst g = $('Load').first().json;\nlet state = { words: {} };\nif (g.statusCode === 200) { try { const s = JSON.parse(g.body); if (s && s.words) state = s; } catch (e) {} }\nlet items;\ntry { items = JSON.parse($('When called').first().json.words); }\ncatch (e) { throw new Error('words must be a JSON array like [{\"fi\":\"talo\",\"ar\":\"بيت\",\"en\":\"house\"}]'); }\nif (!Array.isArray(items)) items = [items];\nlet added = 0; const known = [];\nfor (const w of items) {\n  const key = String((w && w.fi) || '').trim().toLowerCase();\n  if (!key) continue;\n  if (state.words[key]) { known.push(key); continue; }\n  state.words[key] = { fi: w.fi.trim(), ar: w.ar || '', en: w.en || '', example: w.example || '', mnemonic: w.mnemonic || '', chapter: w.chapter || '', box: 1, due: ymd(1), added: ymd(0), lapses: 0, seen: 0 };\n  added++;\n}\nreturn [{ json: { result: `Added ${added} word(s). Already saved: ${known.join(', ') || 'none'}. Total saved: ${Object.keys(state.words).length}.`, payload: JSON.stringify(state, null, 1) } }];\n"
+    }
+   },
+   {
+    "id": "7147c7f9-4cb1-52ea-8855-c26d550165b8",
+    "name": "Put",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     960,
+     0
+    ],
+    "parameters": {
+     "method": "PUT",
+     "url": "https://YOUR-NEXTCLOUD/remote.php/dav/files/YOUR-USER/FinnishBot/vocab.json",
+     "authentication": "genericCredentialType",
+     "genericAuthType": "httpBasicAuth",
+     "sendBody": true,
+     "contentType": "raw",
+     "rawContentType": "application/json; charset=utf-8",
+     "body": "={{ $json.payload }}",
+     "options": {
+      "timeout": 30000,
+      "response": {
+       "response": {
+        "fullResponse": true,
+        "neverError": true
+       }
+      }
+     }
+    },
+    "credentials": {
+     "httpBasicAuth": {
+      "id": "REPLACE_NEXTCLOUD",
+      "name": "Nextcloud FinnishBot"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "id": "204d6f29-b533-532d-af8d-84056c2d37d2",
+    "name": "Out",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1200,
+     0
+    ],
+    "parameters": {
+     "mode": "runOnceForAllItems",
+     "jsCode": "const s = $('Put').first().json.statusCode;\nif (![200, 201, 204].includes(s)) throw new Error('Nextcloud write failed (HTTP ' + s + '). Check the folder exists and the app password.');\nreturn [{ json: { result: $('Logic').first().json.result } }];\n"
+    }
+   }
+  ],
+  "connections": {
+   "When called": {
+    "main": [
+     [
+      {
+       "node": "Load",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Load": {
+    "main": [
+     [
+      {
+       "node": "Logic",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Logic": {
+    "main": [
+     [
+      {
+       "node": "Put",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Put": {
+    "main": [
+     [
+      {
+       "node": "Out",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   }
+  }
+ }
+]

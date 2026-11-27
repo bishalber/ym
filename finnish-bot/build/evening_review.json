@@ -1,0 +1,212 @@
+[
+ {
+  "id": "FIreview00000001",
+  "name": "Finnish - 30 Evening review (19:00)",
+  "active": false,
+  "settings": {
+   "executionOrder": "v1",
+   "timezone": "Europe/Helsinki"
+  },
+  "nodes": [
+   {
+    "id": "ced08166-9013-5785-ba00-8db9e467840a",
+    "name": "Every day 19:00",
+    "type": "n8n-nodes-base.scheduleTrigger",
+    "typeVersion": 1.2,
+    "position": [
+     240,
+     0
+    ],
+    "parameters": {
+     "rule": {
+      "interval": [
+       {
+        "field": "cronExpression",
+        "expression": "0 19 * * *"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "2780acf7-8b58-531c-aff4-5df69b2977aa",
+    "name": "Get vocab",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     480,
+     0
+    ],
+    "parameters": {
+     "method": "GET",
+     "url": "https://YOUR-NEXTCLOUD/remote.php/dav/files/YOUR-USER/FinnishBot/vocab.json",
+     "authentication": "genericCredentialType",
+     "genericAuthType": "httpBasicAuth",
+     "options": {
+      "timeout": 30000,
+      "response": {
+       "response": {
+        "fullResponse": true,
+        "neverError": true,
+        "responseFormat": "text"
+       }
+      }
+     }
+    },
+    "credentials": {
+     "httpBasicAuth": {
+      "id": "REPLACE_NEXTCLOUD",
+      "name": "Nextcloud FinnishBot"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "id": "bb61a727-f5fe-53d5-bae7-6e043aa8eab5",
+    "name": "Build review",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     720,
+     0
+    ],
+    "parameters": {
+     "mode": "runOnceForAllItems",
+     "jsCode": "const TZ = 'Europe/Helsinki';\nconst body = (n) => { try { const j = $(n).first().json; return j.statusCode === 200 ? String(j.body || '') : ''; } catch (e) { return ''; } };\nconst parse = (s, d) => { try { const v = JSON.parse(s); return v || d; } catch (e) { return d; } };\nconst now = $now.setZone(TZ);\nconst ymd = (n) => now.plus({ days: n }).toFormat('yyyy-LL-dd');\nconst state = parse(body('Get vocab'), { words: {} });\nconst due = Object.values(state.words || {}).filter(w => w.due <= ymd(0)).sort((a, b) => (a.box - b.box) || a.due.localeCompare(b.due));\nlet msg, md;\nif (!due.length) {\n  msg = '🎉 مفيش كلمات مستحقة للمراجعة النهارده. كمل بكرة!';\n  md = `# Review ${ymd(0)}\\n\\nNo words due.\\n`;\n} else {\n  const first = due[0];\n  const rest = due.slice(1, 6).map(w => `• ${w.fi} = ${w.ar} (${w.en})`).join('\\n');\n  msg = `🔁 مراجعة المساء\\nعندك ${due.length} كلمة مستحقة.\\n\\n❓ أول كلمة: ما معنى \"${first.fi}\"؟ (اكتب بالعربي أو الإنجليزي)\\n${first.mnemonic ? '(تلميح ممكن لو احتجته)' : ''}\\n\\nبعدها هسألك على الباقي واحدة واحدة.`;\n  md = `# Review question asked ${ymd(0)}\\n\\nAsked: meaning of \"${first.fi}\" (answer: ${first.ar} / ${first.en}${first.mnemonic ? '; hint: ' + first.mnemonic : ''}).\\nStill due after it:\\n${rest || '(none)'}\\nGrade each answer with vocab_grade.\\n`;\n}\nreturn [{ json: { msg, reviewUrl: \"https://YOUR-NEXTCLOUD/remote.php/dav/files/YOUR-USER/FinnishBot\" + '/lessons/' + ymd(0) + '-review.md', reviewMd: md } }];\n"
+    }
+   },
+   {
+    "id": "76f9750c-a11e-5b85-8722-e2897e05fef5",
+    "name": "Put review",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     960,
+     0
+    ],
+    "parameters": {
+     "method": "PUT",
+     "url": "={{ $('Build review').first().json.reviewUrl }}",
+     "authentication": "genericCredentialType",
+     "genericAuthType": "httpBasicAuth",
+     "sendBody": true,
+     "contentType": "raw",
+     "rawContentType": "text/markdown; charset=utf-8",
+     "body": "={{ $('Build review').first().json.reviewMd }}",
+     "options": {
+      "timeout": 30000,
+      "response": {
+       "response": {
+        "fullResponse": true,
+        "neverError": true
+       }
+      }
+     }
+    },
+    "credentials": {
+     "httpBasicAuth": {
+      "id": "REPLACE_NEXTCLOUD",
+      "name": "Nextcloud FinnishBot"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "id": "f4cc0e69-155b-577b-b6a9-21600c6839fe",
+    "name": "Split",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1200,
+     0
+    ],
+    "parameters": {
+     "mode": "runOnceForAllItems",
+     "jsCode": "const text = String($('Build review').first().json.msg || '').trim() || '…';\nconst chat_id = \"REPLACE_OWNER_CHAT_ID\";\nconst out = [];\nlet rest = text;\nwhile (rest.length > 3900) {\n  let cut = rest.lastIndexOf('\\n', 3900);\n  if (cut < 1000) cut = 3900;\n  out.push(rest.slice(0, cut));\n  rest = rest.slice(cut).replace(/^\\n+/, '');\n}\nout.push(rest);\nreturn out.map(t => ({ json: { chat_id, text: t } }));\n"
+    }
+   },
+   {
+    "id": "b15f29ad-6986-523f-be61-e6e68a97bb46",
+    "name": "Send review",
+    "type": "n8n-nodes-base.telegram",
+    "typeVersion": 1.2,
+    "position": [
+     1440,
+     0
+    ],
+    "parameters": {
+     "resource": "message",
+     "operation": "sendMessage",
+     "chatId": "={{ $json.chat_id }}",
+     "text": "={{ $json.text }}",
+     "additionalFields": {
+      "appendAttribution": false
+     }
+    },
+    "credentials": {
+     "telegramApi": {
+      "id": "REPLACE_TG",
+      "name": "BishuFinnish_bot"
+     }
+    }
+   }
+  ],
+  "connections": {
+   "Every day 19:00": {
+    "main": [
+     [
+      {
+       "node": "Get vocab",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Get vocab": {
+    "main": [
+     [
+      {
+       "node": "Build review",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Build review": {
+    "main": [
+     [
+      {
+       "node": "Put review",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Put review": {
+    "main": [
+     [
+      {
+       "node": "Split",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Split": {
+    "main": [
+     [
+      {
+       "node": "Send review",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   }
+  }
+ }
+]

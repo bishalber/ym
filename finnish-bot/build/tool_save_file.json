@@ -1,0 +1,135 @@
+[
+ {
+  "id": "FItoolSaveFile01",
+  "name": "Finnish - tool save_file",
+  "active": false,
+  "settings": {
+   "executionOrder": "v1",
+   "timezone": "Europe/Helsinki"
+  },
+  "nodes": [
+   {
+    "id": "9ade629d-f423-5ddf-aea7-f61d31bbef39",
+    "name": "When called",
+    "type": "n8n-nodes-base.executeWorkflowTrigger",
+    "typeVersion": 1.1,
+    "position": [
+     240,
+     0
+    ],
+    "parameters": {
+     "inputSource": "workflowInputs",
+     "workflowInputs": {
+      "values": [
+       {
+        "name": "path"
+       },
+       {
+        "name": "content"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "9e7c5e48-22bd-55e1-a901-31381406ced2",
+    "name": "Logic",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     480,
+     0
+    ],
+    "parameters": {
+     "mode": "runOnceForAllItems",
+     "jsCode": "const inp = $('When called').first().json;\nconst path = String(inp.path || '').trim().replace(/^\\/+/, '');\nif (!/^(lessons|notes|homework)\\/[A-Za-z0-9._\\/-]+$/.test(path) || path.includes('..')) throw new Error('path must look like lessons/2026-12-01-topic.md (folders: lessons, notes, homework)');\nreturn [{ json: { url: \"https://YOUR-NEXTCLOUD/remote.php/dav/files/YOUR-USER/FinnishBot\" + '/' + path, payload: String(inp.content || ''), result: 'Saved ' + path } }];\n"
+    }
+   },
+   {
+    "id": "e417cf92-6b52-5bd0-bb4f-23386d178c55",
+    "name": "Put",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     720,
+     0
+    ],
+    "parameters": {
+     "method": "PUT",
+     "url": "={{ $json.url }}",
+     "authentication": "genericCredentialType",
+     "genericAuthType": "httpBasicAuth",
+     "sendBody": true,
+     "contentType": "raw",
+     "rawContentType": "text/markdown; charset=utf-8",
+     "body": "={{ $json.payload }}",
+     "options": {
+      "timeout": 30000,
+      "response": {
+       "response": {
+        "fullResponse": true,
+        "neverError": true
+       }
+      }
+     }
+    },
+    "credentials": {
+     "httpBasicAuth": {
+      "id": "REPLACE_NEXTCLOUD",
+      "name": "Nextcloud FinnishBot"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "id": "04db47aa-50c3-52a7-ae49-d1c4f223aeb7",
+    "name": "Out",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     960,
+     0
+    ],
+    "parameters": {
+     "mode": "runOnceForAllItems",
+     "jsCode": "const s = $('Put').first().json.statusCode;\nif (![200, 201, 204].includes(s)) throw new Error('Nextcloud write failed (HTTP ' + s + '). Check the folder exists and the app password.');\nreturn [{ json: { result: $('Logic').first().json.result } }];\n"
+    }
+   }
+  ],
+  "connections": {
+   "When called": {
+    "main": [
+     [
+      {
+       "node": "Logic",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Logic": {
+    "main": [
+     [
+      {
+       "node": "Put",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Put": {
+    "main": [
+     [
+      {
+       "node": "Out",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   }
+  }
+ }
+]

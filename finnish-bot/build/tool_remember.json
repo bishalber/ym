@@ -1,0 +1,176 @@
+[
+ {
+  "id": "FItoolRemember01",
+  "name": "Finnish - tool remember",
+  "active": false,
+  "settings": {
+   "executionOrder": "v1",
+   "timezone": "Europe/Helsinki"
+  },
+  "nodes": [
+   {
+    "id": "3eae3974-e71a-5c02-b724-91fdc1cedde7",
+    "name": "When called",
+    "type": "n8n-nodes-base.executeWorkflowTrigger",
+    "typeVersion": 1.1,
+    "position": [
+     240,
+     0
+    ],
+    "parameters": {
+     "inputSource": "workflowInputs",
+     "workflowInputs": {
+      "values": [
+       {
+        "name": "note"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "c02f165f-69be-5cba-92d9-b31a7c9e521a",
+    "name": "Load",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     480,
+     0
+    ],
+    "parameters": {
+     "method": "GET",
+     "url": "https://YOUR-NEXTCLOUD/remote.php/dav/files/YOUR-USER/FinnishBot/notes.json",
+     "authentication": "genericCredentialType",
+     "genericAuthType": "httpBasicAuth",
+     "options": {
+      "timeout": 30000,
+      "response": {
+       "response": {
+        "fullResponse": true,
+        "neverError": true,
+        "responseFormat": "text"
+       }
+      }
+     }
+    },
+    "credentials": {
+     "httpBasicAuth": {
+      "id": "REPLACE_NEXTCLOUD",
+      "name": "Nextcloud FinnishBot"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "id": "216a7005-ea7d-521f-90bb-209d9cfafab6",
+    "name": "Logic",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     720,
+     0
+    ],
+    "parameters": {
+     "mode": "runOnceForAllItems",
+     "jsCode": "const TZ = 'Europe/Helsinki';\nconst body = (n) => { try { const j = $(n).first().json; return j.statusCode === 200 ? String(j.body || '') : ''; } catch (e) { return ''; } };\nconst parse = (s, d) => { try { const v = JSON.parse(s); return v || d; } catch (e) { return d; } };\nconst now = $now.setZone(TZ);\nconst ymd = (n) => now.plus({ days: n }).toFormat('yyyy-LL-dd');\nconst g = $('Load').first().json;\nlet state = { notes: [] };\nif (g.statusCode === 200) { try { const s = JSON.parse(g.body); if (s && Array.isArray(s.notes)) state = s; } catch (e) {} }\nconst note = String($('When called').first().json.note || '').trim().slice(0, 400);\nif (!note) throw new Error('note is empty');\nstate.notes.push({ date: ymd(0), text: note });\nstate.notes = state.notes.slice(-200);\nreturn [{ json: { result: 'Saved note.', payload: JSON.stringify(state, null, 1) } }];\n"
+    }
+   },
+   {
+    "id": "1034c9eb-5c07-578c-8c4b-3085464fcd4a",
+    "name": "Put",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     960,
+     0
+    ],
+    "parameters": {
+     "method": "PUT",
+     "url": "https://YOUR-NEXTCLOUD/remote.php/dav/files/YOUR-USER/FinnishBot/notes.json",
+     "authentication": "genericCredentialType",
+     "genericAuthType": "httpBasicAuth",
+     "sendBody": true,
+     "contentType": "raw",
+     "rawContentType": "application/json; charset=utf-8",
+     "body": "={{ $json.payload }}",
+     "options": {
+      "timeout": 30000,
+      "response": {
+       "response": {
+        "fullResponse": true,
+        "neverError": true
+       }
+      }
+     }
+    },
+    "credentials": {
+     "httpBasicAuth": {
+      "id": "REPLACE_NEXTCLOUD",
+      "name": "Nextcloud FinnishBot"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "id": "07b23ffa-ce42-59d3-a499-14ceaed73b7d",
+    "name": "Out",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1200,
+     0
+    ],
+    "parameters": {
+     "mode": "runOnceForAllItems",
+     "jsCode": "const s = $('Put').first().json.statusCode;\nif (![200, 201, 204].includes(s)) throw new Error('Nextcloud write failed (HTTP ' + s + '). Check the folder exists and the app password.');\nreturn [{ json: { result: $('Logic').first().json.result } }];\n"
+    }
+   }
+  ],
+  "connections": {
+   "When called": {
+    "main": [
+     [
+      {
+       "node": "Load",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Load": {
+    "main": [
+     [
+      {
+       "node": "Logic",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Logic": {
+    "main": [
+     [
+      {
+       "node": "Put",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Put": {
+    "main": [
+     [
+      {
+       "node": "Out",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   }
+  }
+ }
+]

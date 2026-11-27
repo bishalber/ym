@@ -1,0 +1,450 @@
+[
+ {
+  "id": "FIdaily000000001",
+  "name": "Finnish - 20 Daily lesson (07:30)",
+  "active": false,
+  "settings": {
+   "executionOrder": "v1",
+   "timezone": "Europe/Helsinki"
+  },
+  "nodes": [
+   {
+    "id": "dd41dce6-ed5a-5396-8147-bace52ad8ef0",
+    "name": "Every day 07:30",
+    "type": "n8n-nodes-base.scheduleTrigger",
+    "typeVersion": 1.2,
+    "position": [
+     240,
+     0
+    ],
+    "parameters": {
+     "rule": {
+      "interval": [
+       {
+        "field": "cronExpression",
+        "expression": "30 7 * * *"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "id": "214a77f1-e2d8-5672-a9a2-4b0af8ebf0aa",
+    "name": "Get vocab",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     480,
+     0
+    ],
+    "parameters": {
+     "method": "GET",
+     "url": "https://YOUR-NEXTCLOUD/remote.php/dav/files/YOUR-USER/FinnishBot/vocab.json",
+     "authentication": "genericCredentialType",
+     "genericAuthType": "httpBasicAuth",
+     "options": {
+      "timeout": 30000,
+      "response": {
+       "response": {
+        "fullResponse": true,
+        "neverError": true,
+        "responseFormat": "text"
+       }
+      }
+     }
+    },
+    "credentials": {
+     "httpBasicAuth": {
+      "id": "REPLACE_NEXTCLOUD",
+      "name": "Nextcloud FinnishBot"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "id": "4f1f309d-1d9a-568b-9278-6f1ac339d8a6",
+    "name": "Get notes",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     720,
+     0
+    ],
+    "parameters": {
+     "method": "GET",
+     "url": "https://YOUR-NEXTCLOUD/remote.php/dav/files/YOUR-USER/FinnishBot/notes.json",
+     "authentication": "genericCredentialType",
+     "genericAuthType": "httpBasicAuth",
+     "options": {
+      "timeout": 30000,
+      "response": {
+       "response": {
+        "fullResponse": true,
+        "neverError": true,
+        "responseFormat": "text"
+       }
+      }
+     }
+    },
+    "credentials": {
+     "httpBasicAuth": {
+      "id": "REPLACE_NEXTCLOUD",
+      "name": "Nextcloud FinnishBot"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "id": "31a4f034-6df3-5785-89c2-0732e29cf32d",
+    "name": "Lesson request",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     960,
+     0
+    ],
+    "parameters": {
+     "mode": "runOnceForAllItems",
+     "jsCode": "const TZ = 'Europe/Helsinki';\nconst body = (n) => { try { const j = $(n).first().json; return j.statusCode === 200 ? String(j.body || '') : ''; } catch (e) { return ''; } };\nconst parse = (s, d) => { try { const v = JSON.parse(s); return v || d; } catch (e) { return d; } };\nconst now = $now.setZone(TZ);\nconst ymd = (n) => now.plus({ days: n }).toFormat('yyyy-LL-dd');\nconst PROMPT = \"You are Bishu's Finnish teacher on Telegram (bot: BishuFinnish_bot). He is an adult learner\\nusing the textbooks \\\"Suomen Mestari 1\\\" and \\\"Suomen Mestari 2\\\". His first language is Egyptian\\nArabic and he also speaks English. His goals: build vocabulary, speak and write real-life\\nFinnish, and pass the YKI test.\\n\\nHOW TO TEACH\\n- Explain in Egyptian Arabic (عامية مصرية). Finnish words are written in Latin letters.\\n- Ask ONE question at a time. Never give the answer before he tries.\\n- If he is wrong: say what was right in his answer, then the fix, then ask him to try again.\\n  Praise only when he is correct.\\n- Give the meaning of every new word (Arabic + English).\\n- Grammar in short rules with 2-3 examples (stem/vartalo, partitive, cases, vowel harmony ä/a).\\n- Short answers: he is on a phone. Usually under 900 characters.\\n\\nTELEGRAM FORMAT\\n- Messages go out as PLAIN TEXT. No markdown (no **bold**, no tables, no #). Use short lines,\\n  emojis as bullets, and \\\"finnish = عربي (english)\\\" for word lists.\\n\\nVOICE / DICTATION\\n- He often dictates Finnish by voice, so Finnish words may arrive as Arabic letters or garbled\\n  text. Treat them as attempts at Finnish, not as Arabic.\\n- If you cannot understand it, say so and ask him to repeat. Never pretend you understood.\\n- Pronunciation: e = \\\"eh\\\", ä = front \\\"a\\\", double letters are held longer.\\n\\nHOMEWORK PHOTOS\\n- Read the handwriting carefully. Give: what he wrote -> correct form -> ✔ or ❌ + short reason.\\n- Never guess text that is covered or unclear; say it is unclear.\\n- Double-check the grammar yourself before correcting.\\n- Drill his repeated mistakes, then finish with a short summary of corrections to copy to his book.\\n\\nMEMORIZATION TECHNIQUES (use them, name them briefly so he learns how to learn)\\n1. Retrieval first: ask him to recall before you tell him. Never re-show a word he has not tried.\\n2. Spaced repetition: the vocab tools run a Leitner system (boxes 1-5 = 1, 2, 4, 8, 16 days).\\n   Save every new word with vocab_add. When he answers a word, call vocab_grade (yes/no).\\n3. Keyword mnemonic: link the Finnish sound to an Egyptian-Arabic or English sound-alike and a\\n   vivid picture. Put it in the mnemonic field. Example style only: \\\"kissa\\\" (cat) sounds like\\n   \\\"كيسه\\\"... then an image. Make a fresh one per word; keep it silly and short.\\n4. Chunks, not single words: teach words inside a sentence he can reuse (\\\"Kello on kolme.\\\").\\n5. Word families and stems: show the vartalo and 1-2 forms so one word unlocks several.\\n6. Use it on yourself: ask him to make a sentence about his own life with the new word.\\n7. Interleave: mix today's words with older ones. Spaced, mixed practice beats repeating.\\n8. Say it aloud / shadowing: have him say the sentence out loud, then dictate it to you.\\n9. Write by hand: ask him to write 3 sentences in his notebook and send a photo.\\n\\nREAL-LIFE DRILLS\\n- Role-play one line at a time. You play the other person (clerk, doctor, landlord, bus driver,\\n  Kela / TE-toimisto officer, colleague). He answers in Finnish. After each of his turns: tiny\\n  correction (if needed), then your next line. Raise difficulty slowly.\\n- Typical scenes: shop, café, bus/train, doctor/pharmacy, renting a flat, phone appointments,\\n  Kela/TE/Migri forms, job interview, workplace small talk, daycare/school, bank, post.\\n- End a drill with 3 useful phrases from it, saved with vocab_add.\\n\\nYKI MODE (/yki)\\n- YKI has four parts: speaking (puhuminen), writing (kirjoittaminen), listening comprehension\\n  (puheen ymmärtäminen) and reading comprehension (tekstin ymmärtäminen). Start at the basic\\n  level (perustaso, A1-A2). Ask what level he is aiming for before going higher.\\n- Give ONE task at a time in YKI style, in Finnish with an Arabic hint of what is asked.\\n  Speaking: short answers and role-plays. Writing: 30-60 word messages (to a landlord, a\\n  doctor's office, a colleague). Reading: a short notice, ad or message with 3 questions.\\n- Listening: you cannot play audio. Use dictation (he dictates / you describe in text) and\\n  recommend Yle Selkouutiset for real listening. Say honestly that this part is weaker here.\\n- Mark his answer on: task completed, vocabulary, grammar, clarity. Short, honest feedback.\\n- You are practice, not the official test. Official format and levels: yki.fi. Say so once.\\n\\nCOMMANDS (he may type them)\\n/start - greet him, ask which chapter he is on if you do not know.\\n/today - continue today's lesson (see TODAY'S LESSON below if present).\\n/review - quiz him on due words (use vocab_due), one word at a time.\\n/drill - real-life role-play, ask which scene (or choose one he has not done).\\n/yki - YKI practice task.\\n/words - show how many words are saved and due (use vocab_due).\\n/progress - short summary: words, boxes, repeated mistakes from SAVED NOTES.\\n\\nTOOLS\\n- vocab_add(words): JSON array of {fi, ar, en, example, mnemonic, chapter}. Save new words.\\n- vocab_due(limit): words due for review today, plus stats.\\n- vocab_grade(word, correct): \\\"yes\\\" or \\\"no\\\" after he answers a word.\\n- remember(note): one sentence about his progress, repeated mistakes or preferences.\\n  Call it whenever he repeats a mistake, finishes a chapter, or states a preference.\\n- save_file(path, content): save a markdown file to his Nextcloud under lessons/, notes/ or\\n  homework/ (for example a lesson summary he asks to keep).\\n\\nHARD RULES\\n- Do not invent what is on a textbook page. You do not have the books. If you are not sure what a\\n  chapter contains, ask him to send a photo of the sanasto/grammar page (caption \\\"sanasto kpl 3\\\"\\n  adds the words to his list automatically).\\n- Never pretend you saw or understood something you did not.\\n- Only use Finnish you are sure is correct. If unsure, say so.\\n- Never ask for passwords, tokens or personal documents.\\n\\nEND OF EVERY LESSON\\n- Give a vocabulary list with meanings and a 3-line recap of the rules practiced.\\n- Call remember with a one-line progress note, then vocab_add for any new words not yet saved.\\n\\nLEARNER FACTS\\n- Name: Bishu. Adult learner. Native Egyptian Arabic, also speaks English.\\n- Textbooks: Suomen Mestari 1 and 2. Last known position: Suomen Mestari 1, kappale 3-4.\\n- Uses a phone; wants short answers. Often uses voice dictation, so Finnish may appear garbled\\n  or in Arabic letters.\\n- Goals: vocabulary, sentences, real-life situations, YKI test.\\n- Lesson already covered (from earlier Claude sessions): telling the time in Finnish.\\n  Numbers 1-12; \\\"Paljonko kello on?\\\"; \\\"Kello on kolme.\\\"; yli (past), vaille (to, takes the\\n  partitive: viittä/kymmentä vaille), puoli + next hour (puoli neljä = 3:30).\\n  Last question left unanswered: how to say \\\"the time is five o'clock\\\" (kello on viisi).\\n- Preferences: one question at a time; correct him with what was right first; praise only when\\n  correct; memorization techniques and teaching skills taught along the way.\\n- Not yet available to the teacher: the actual text of the textbooks. He must send photos of\\n  vocabulary/grammar pages.\\n\";\nconst SCHEMA = {\"type\": \"object\", \"properties\": {\"title\": {\"type\": \"string\"}, \"intro_ar\": {\"type\": \"string\"}, \"new_words\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"fi\": {\"type\": \"string\"}, \"ar\": {\"type\": \"string\"}, \"en\": {\"type\": \"string\"}, \"example_fi\": {\"type\": \"string\"}, \"example_ar\": {\"type\": \"string\"}, \"mnemonic_ar\": {\"type\": \"string\"}}, \"required\": [\"fi\", \"ar\", \"en\", \"example_fi\", \"example_ar\", \"mnemonic_ar\"], \"additionalProperties\": false}}, \"sentences\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"fi\": {\"type\": \"string\"}, \"ar\": {\"type\": \"string\"}}, \"required\": [\"fi\", \"ar\"], \"additionalProperties\": false}}, \"grammar_ar\": {\"type\": \"string\"}, \"real_life\": {\"type\": \"object\", \"properties\": {\"scenario_ar\": {\"type\": \"string\"}, \"lines\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"who\": {\"type\": \"string\"}, \"fi\": {\"type\": \"string\"}, \"ar\": {\"type\": \"string\"}}, \"required\": [\"who\", \"fi\", \"ar\"], \"additionalProperties\": false}}}, \"required\": [\"scenario_ar\", \"lines\"], \"additionalProperties\": false}, \"yki\": {\"type\": \"object\", \"properties\": {\"skill\": {\"type\": \"string\"}, \"task_fi\": {\"type\": \"string\"}, \"task_ar\": {\"type\": \"string\"}}, \"required\": [\"skill\", \"task_fi\", \"task_ar\"], \"additionalProperties\": false}, \"question\": {\"type\": \"object\", \"properties\": {\"fi\": {\"type\": \"string\"}, \"ar\": {\"type\": \"string\"}}, \"required\": [\"fi\", \"ar\"], \"additionalProperties\": false}, \"homework_ar\": {\"type\": \"string\"}}, \"required\": [\"title\", \"intro_ar\", \"new_words\", \"sentences\", \"grammar_ar\", \"real_life\", \"yki\", \"question\", \"homework_ar\"], \"additionalProperties\": false};\nconst SCENARIOS = ['at the supermarket (kauppa)', 'buying bus/train tickets and asking directions', 'doctor and pharmacy (lääkäri, apteekki)', 'Kela / TE-toimisto / Migri paperwork', 'job interview and workplace small talk', 'renting a flat and talking to the landlord', 'phone call: making and changing an appointment', 'café / restaurant ordering', 'school, daycare and neighbours', 'bank, post office and parcels'];\nconst scenario = SCENARIOS[now.ordinal % SCENARIOS.length];\nconst FOCUS = {\n  1: 'GRAMMAR from Suomen Mestari at his current chapter: one rule, 3 examples, then practice sentences.',\n  2: 'REAL LIFE: role-play vocabulary and phrases for: ' + scenario + '.',\n  3: 'YKI SPEAKING (puhuminen): short spoken answers and one role-play task at basic level.',\n  4: 'YKI READING + WRITING: a short notice/message with questions, and a 30-60 word writing task.',\n  5: 'SENTENCE BUILDING: turn words into full sentences, then weekly review of the hardest words.',\n  6: 'YKI LISTENING-style DICTATION and pronunciation (double letters, ä/ö/y) plus mnemonics recap.',\n  7: 'LIGHT REVIEW: spaced repetition of due words, one easy real-life dialogue, rest day tone.'\n};\nconst notesArr = (parse(body('Get notes'), { notes: [] }).notes || []).slice(-40);\nconst vocab = parse(body('Get vocab'), { words: {} }).words || {};\nconst all = Object.values(vocab);\nconst due = all.filter(w => w.due <= ymd(0)).sort((a, b) => a.box - b.box).slice(0, 10);\nconst known = Object.keys(vocab).slice(-300);\nconst INSTR = `\\n\\nTASK: Create TODAY'S DAILY LESSON as JSON matching the schema. Rules: exactly 5 new_words (not in known_words), each with a fresh Egyptian-Arabic mnemonic; 4 sentences that reuse new words and due_words; all Finnish must be correct (vowel harmony, case endings, partitive, time expressions); Arabic in Egyptian dialect; \"real_life.lines\" is a short dialogue of 4-6 lines; \"yki\" is ONE task matching today's focus; \"question\" is exactly ONE first question for him to answer in the chat (retrieval of a due word is a good choice); keep every field short because he reads on a phone. Use his current textbook position from the notes if any note mentions a chapter (kappale/kpl); otherwise assume Suomen Mestari 1, kappale 3-4 revision. Do not claim anything about specific textbook pages.`;\nconst user = JSON.stringify({ date: ymd(0), weekday: now.toFormat('cccc'), focus: FOCUS[now.weekday], scenario, notes: notesArr, due_words: due.map(w => ({ fi: w.fi, ar: w.ar, en: w.en })), known_words: known });\nconst request = { model: \"claude-opus-5-5\", max_tokens: 6000, output_config: { format: { type: 'json_schema', schema: SCHEMA } }, system: PROMPT + INSTR, messages: [{ role: 'user', content: user }] };\nreturn [{ json: { body: request } }];\n"
+    }
+   },
+   {
+    "id": "cebb34d8-20de-5639-83b0-46f0f37e7875",
+    "name": "Claude lesson",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     1200,
+     0
+    ],
+    "parameters": {
+     "method": "POST",
+     "url": "https://api.anthropic.com/v1/messages",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "anthropicApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "anthropic-version",
+        "value": "2026-10-21"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify($json.body) }}",
+     "options": {
+      "timeout": 180000
+     }
+    },
+    "credentials": {
+     "anthropicApi": {
+      "id": "REPLACE_ANTHROPIC",
+      "name": "Anthropic account"
+     }
+    }
+   },
+   {
+    "id": "233aaa39-d6d7-568b-bcc6-edf768de65e6",
+    "name": "Check request",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1440,
+     0
+    ],
+    "parameters": {
+     "mode": "runOnceForAllItems",
+     "jsCode": "const TZ = 'Europe/Helsinki';\nconst body = (n) => { try { const j = $(n).first().json; return j.statusCode === 200 ? String(j.body || '') : ''; } catch (e) { return ''; } };\nconst parse = (s, d) => { try { const v = JSON.parse(s); return v || d; } catch (e) { return d; } };\nconst now = $now.setZone(TZ);\nconst ymd = (n) => now.plus({ days: n }).toFormat('yyyy-LL-dd');\nconst SCHEMA = {\"type\": \"object\", \"properties\": {\"title\": {\"type\": \"string\"}, \"intro_ar\": {\"type\": \"string\"}, \"new_words\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"fi\": {\"type\": \"string\"}, \"ar\": {\"type\": \"string\"}, \"en\": {\"type\": \"string\"}, \"example_fi\": {\"type\": \"string\"}, \"example_ar\": {\"type\": \"string\"}, \"mnemonic_ar\": {\"type\": \"string\"}}, \"required\": [\"fi\", \"ar\", \"en\", \"example_fi\", \"example_ar\", \"mnemonic_ar\"], \"additionalProperties\": false}}, \"sentences\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"fi\": {\"type\": \"string\"}, \"ar\": {\"type\": \"string\"}}, \"required\": [\"fi\", \"ar\"], \"additionalProperties\": false}}, \"grammar_ar\": {\"type\": \"string\"}, \"real_life\": {\"type\": \"object\", \"properties\": {\"scenario_ar\": {\"type\": \"string\"}, \"lines\": {\"type\": \"array\", \"items\": {\"type\": \"object\", \"properties\": {\"who\": {\"type\": \"string\"}, \"fi\": {\"type\": \"string\"}, \"ar\": {\"type\": \"string\"}}, \"required\": [\"who\", \"fi\", \"ar\"], \"additionalProperties\": false}}}, \"required\": [\"scenario_ar\", \"lines\"], \"additionalProperties\": false}, \"yki\": {\"type\": \"object\", \"properties\": {\"skill\": {\"type\": \"string\"}, \"task_fi\": {\"type\": \"string\"}, \"task_ar\": {\"type\": \"string\"}}, \"required\": [\"skill\", \"task_fi\", \"task_ar\"], \"additionalProperties\": false}, \"question\": {\"type\": \"object\", \"properties\": {\"fi\": {\"type\": \"string\"}, \"ar\": {\"type\": \"string\"}}, \"required\": [\"fi\", \"ar\"], \"additionalProperties\": false}, \"homework_ar\": {\"type\": \"string\"}}, \"required\": [\"title\", \"intro_ar\", \"new_words\", \"sentences\", \"grammar_ar\", \"real_life\", \"yki\", \"question\", \"homework_ar\"], \"additionalProperties\": false};\nconst res = $input.first().json;\nif (res.error || !Array.isArray(res.content)) throw new Error('Claude error: ' + JSON.stringify(res.error || res).slice(0, 300));\nconst lesson = res.content.filter(c => c.type === 'text').map(c => c.text).join('');\nconst SYSTEM = 'You are a strict Finnish language proofreader and Egyptian-Arabic reviewer. You receive a lesson as JSON. Fix every error in the Finnish (spelling, vowel harmony, case endings, partitive, verb forms, time expressions, word meaning) and any wrong or unnatural Egyptian-Arabic/English meaning. Keep the same JSON structure, the same number of items and the same length. Do not add new content. Return only the corrected JSON.';\nconst request = { model: \"claude-opus-5-5\", max_tokens: 6000, output_config: { format: { type: 'json_schema', schema: SCHEMA } }, system: SYSTEM, messages: [{ role: 'user', content: lesson }] };\nreturn [{ json: { body: request } }];\n"
+    }
+   },
+   {
+    "id": "fcf55d42-d3d5-59d3-ba1e-bf653499b14d",
+    "name": "Claude check",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     1680,
+     0
+    ],
+    "parameters": {
+     "method": "POST",
+     "url": "https://api.anthropic.com/v1/messages",
+     "authentication": "predefinedCredentialType",
+     "nodeCredentialType": "anthropicApi",
+     "sendHeaders": true,
+     "headerParameters": {
+      "parameters": [
+       {
+        "name": "anthropic-version",
+        "value": "2026-10-21"
+       }
+      ]
+     },
+     "sendBody": true,
+     "specifyBody": "json",
+     "jsonBody": "={{ JSON.stringify($json.body) }}",
+     "options": {
+      "timeout": 180000
+     }
+    },
+    "credentials": {
+     "anthropicApi": {
+      "id": "REPLACE_ANTHROPIC",
+      "name": "Anthropic account"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "id": "f0b84f8c-4db0-537c-a967-758b99588400",
+    "name": "Finalize",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     1920,
+     0
+    ],
+    "parameters": {
+     "mode": "runOnceForAllItems",
+     "jsCode": "const TZ = 'Europe/Helsinki';\nconst body = (n) => { try { const j = $(n).first().json; return j.statusCode === 200 ? String(j.body || '') : ''; } catch (e) { return ''; } };\nconst parse = (s, d) => { try { const v = JSON.parse(s); return v || d; } catch (e) { return d; } };\nconst now = $now.setZone(TZ);\nconst ymd = (n) => now.plus({ days: n }).toFormat('yyyy-LL-dd');\nconst read = (r) => JSON.parse(r.content.filter(c => c.type === 'text').map(c => c.text).join(''));\nlet L, checked = true;\ntry { L = read($('Claude check').first().json); }\ncatch (e) { checked = false; L = read($('Claude lesson').first().json); }\nconst state = parse(body('Get vocab'), { words: {} });\nif (!state.words) state.words = {};\nlet added = 0;\nfor (const w of L.new_words) {\n  const key = String(w.fi || '').trim().toLowerCase();\n  if (!key || state.words[key]) continue;\n  state.words[key] = { fi: w.fi.trim(), ar: w.ar, en: w.en, example: w.example_fi, mnemonic: w.mnemonic_ar, chapter: 'daily ' + ymd(0), box: 1, due: ymd(1), added: ymd(0), lapses: 0, seen: 0 };\n  added++;\n}\nconst words = L.new_words.map((w, i) => `${i + 1}. ${w.fi} = ${w.ar} (${w.en})\\n   ${w.example_fi} = ${w.example_ar}\\n   💡 ${w.mnemonic_ar}`).join('\\n');\nconst sents = L.sentences.map(s => `• ${s.fi}\\n  ${s.ar}`).join('\\n');\nconst dlg = L.real_life.lines.map(l => `${l.who}: ${l.fi}\\n   ${l.ar}`).join('\\n');\nconst msg = `📘 ${L.title}\\n${L.intro_ar}\\n\\n🆕 كلمات النهارده\\n${words}\\n\\n🧩 جمل\\n${sents}\\n\\n📐 قاعدة\\n${L.grammar_ar}\\n\\n🏪 موقف حقيقي\\n${L.real_life.scenario_ar}\\n${dlg}\\n\\n🎯 YKI (${L.yki.skill})\\n${L.yki.task_fi}\\n${L.yki.task_ar}\\n\\n📝 واجب: ${L.homework_ar}\\n\\n❓ سؤال واحد:\\n${L.question.fi}\\n${L.question.ar}${checked ? '' : '\\n\\n(⚠️ الدرس ماتراجعش لغوياً الليلة)'}`;\nconst md = `# ${L.title}\\n\\nDate: ${ymd(0)}\\n\\n${msg}\\n`;\nreturn [{ json: { msg, lessonUrl: \"https://YOUR-NEXTCLOUD/remote.php/dav/files/YOUR-USER/FinnishBot\" + '/lessons/' + ymd(0) + '.md', lessonMd: md, vocabPayload: JSON.stringify(state, null, 1), added } }];\n"
+    }
+   },
+   {
+    "id": "d0d8ef4c-52ff-5ebf-b33c-f16bafb4926e",
+    "name": "Put vocab",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     2160,
+     0
+    ],
+    "parameters": {
+     "method": "PUT",
+     "url": "https://YOUR-NEXTCLOUD/remote.php/dav/files/YOUR-USER/FinnishBot/vocab.json",
+     "authentication": "genericCredentialType",
+     "genericAuthType": "httpBasicAuth",
+     "sendBody": true,
+     "contentType": "raw",
+     "rawContentType": "application/json; charset=utf-8",
+     "body": "={{ $json.vocabPayload }}",
+     "options": {
+      "timeout": 30000,
+      "response": {
+       "response": {
+        "fullResponse": true,
+        "neverError": true
+       }
+      }
+     }
+    },
+    "credentials": {
+     "httpBasicAuth": {
+      "id": "REPLACE_NEXTCLOUD",
+      "name": "Nextcloud FinnishBot"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "id": "1d2d60db-ccdf-56c6-abb2-d5f7cf157559",
+    "name": "Put lesson",
+    "type": "n8n-nodes-base.httpRequest",
+    "typeVersion": 4.2,
+    "position": [
+     2400,
+     0
+    ],
+    "parameters": {
+     "method": "PUT",
+     "url": "={{ $('Finalize').first().json.lessonUrl }}",
+     "authentication": "genericCredentialType",
+     "genericAuthType": "httpBasicAuth",
+     "sendBody": true,
+     "contentType": "raw",
+     "rawContentType": "text/markdown; charset=utf-8",
+     "body": "={{ $('Finalize').first().json.lessonMd }}",
+     "options": {
+      "timeout": 30000,
+      "response": {
+       "response": {
+        "fullResponse": true,
+        "neverError": true
+       }
+      }
+     }
+    },
+    "credentials": {
+     "httpBasicAuth": {
+      "id": "REPLACE_NEXTCLOUD",
+      "name": "Nextcloud FinnishBot"
+     }
+    },
+    "onError": "continueRegularOutput"
+   },
+   {
+    "id": "60b889f8-8774-5a7f-b90a-9c150174370a",
+    "name": "Split",
+    "type": "n8n-nodes-base.code",
+    "typeVersion": 2,
+    "position": [
+     2640,
+     0
+    ],
+    "parameters": {
+     "mode": "runOnceForAllItems",
+     "jsCode": "const text = String($('Finalize').first().json.msg || '').trim() || '…';\nconst chat_id = \"REPLACE_OWNER_CHAT_ID\";\nconst out = [];\nlet rest = text;\nwhile (rest.length > 3900) {\n  let cut = rest.lastIndexOf('\\n', 3900);\n  if (cut < 1000) cut = 3900;\n  out.push(rest.slice(0, cut));\n  rest = rest.slice(cut).replace(/^\\n+/, '');\n}\nout.push(rest);\nreturn out.map(t => ({ json: { chat_id, text: t } }));\n"
+    }
+   },
+   {
+    "id": "bbb4c71e-65ab-599f-9c3d-868f6c120d72",
+    "name": "Send lesson",
+    "type": "n8n-nodes-base.telegram",
+    "typeVersion": 1.2,
+    "position": [
+     2880,
+     0
+    ],
+    "parameters": {
+     "resource": "message",
+     "operation": "sendMessage",
+     "chatId": "={{ $json.chat_id }}",
+     "text": "={{ $json.text }}",
+     "additionalFields": {
+      "appendAttribution": false
+     }
+    },
+    "credentials": {
+     "telegramApi": {
+      "id": "REPLACE_TG",
+      "name": "BishuFinnish_bot"
+     }
+    }
+   }
+  ],
+  "connections": {
+   "Every day 07:30": {
+    "main": [
+     [
+      {
+       "node": "Get vocab",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Get vocab": {
+    "main": [
+     [
+      {
+       "node": "Get notes",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Get notes": {
+    "main": [
+     [
+      {
+       "node": "Lesson request",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Lesson request": {
+    "main": [
+     [
+      {
+       "node": "Claude lesson",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Claude lesson": {
+    "main": [
+     [
+      {
+       "node": "Check request",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Check request": {
+    "main": [
+     [
+      {
+       "node": "Claude check",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Claude check": {
+    "main": [
+     [
+      {
+       "node": "Finalize",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Finalize": {
+    "main": [
+     [
+      {
+       "node": "Put vocab",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Put vocab": {
+    "main": [
+     [
+      {
+       "node": "Put lesson",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Put lesson": {
+    "main": [
+     [
+      {
+       "node": "Split",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   },
+   "Split": {
+    "main": [
+     [
+      {
+       "node": "Send lesson",
+       "type": "main",
+       "index": 0
+      }
+     ]
+    ]
+   }
+  }
+ }
+]
