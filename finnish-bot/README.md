@@ -38,7 +38,8 @@ Nextcloud layout (`FinnishBot/`): `vocab.json`, `notes.json`, `lessons/`, `homew
 4. **Public HTTPS URL for n8n** (`WEBHOOK_URL`), needed by the Telegram trigger.
 5. Transfer to Nextcloud (creates folders, uploads skill, prompt, lessons, metadata, seed vocab):
    `NC_URL=https://cloud.example.com NC_USER=... NC_APP_PASSWORD=... ./nextcloud_upload.sh`
-6. Build with your ids and deploy:
+6. Build with your ids and deploy (`make.sh` reads private settings from `env.local.sh`, which is git-ignored;
+   create it with `echo 'export FI_OWNER_CHAT_ID=<your id>' > env.local.sh`, then `./make.sh deploy`). Manual equivalent:
    ```
    export FI_OWNER_CHAT_ID=123456789
    export FI_NC_BASE=https://cloud.example.com/remote.php/dav/files/<user>/FinnishBot
